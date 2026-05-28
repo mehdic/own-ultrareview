@@ -58,7 +58,7 @@ def test_full_cli_chain_from_start_to_report(tmp_path):
                         "confidence": 88,
                         "file": "app.py",
                         "line": 1,
-                        "introduced_by_diff": True,
+                        "introduced_by_diff": "The diff changed the command output expected by downstream callers.",
                         "claim": "The printed value changed.",
                         "failure_mode": "Callers expecting old output receive new output.",
                         "evidence": [{"path": "app.py", "line": 1, "quote": "print('new')"}],

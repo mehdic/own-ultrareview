@@ -69,9 +69,11 @@ def init_schema(conn: sqlite3.Connection) -> None:
           confidence integer not null,
           file_path text not null,
           line integer not null,
+          introduced_by_diff text,
           claim text not null,
           failure_mode text not null,
           evidence_json text not null,
+          suggested_fix text,
           status text not null,
           created_at text not null
         );
@@ -121,7 +123,15 @@ def init_schema(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    _ensure_column(conn, "candidates", "introduced_by_diff", "text")
+    _ensure_column(conn, "candidates", "suggested_fix", "text")
     conn.commit()
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {row[1] for row in conn.execute(f"pragma table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"alter table {table} add column {column} {definition}")
 
 
 def create_run(
@@ -200,16 +210,24 @@ def create_task(
 
 
 def next_task(conn: sqlite3.Connection, run_id: str) -> dict[str, Any] | None:
+    now = _now()
     cursor = conn.execute(
         """
-        select * from agent_tasks
-        where run_id = ? and status = 'pending'
-        order by created_at, rowid
-        limit 1
+        update agent_tasks
+        set status = 'running', started_at = ?, error = null
+        where id = (
+          select id from agent_tasks
+          where run_id = ? and status = 'pending'
+          order by created_at, rowid
+          limit 1
+        )
+        returning *
         """,
-        (run_id,),
+        (now, run_id),
     )
-    return _row_to_dict(cursor, cursor.fetchone())
+    task = _row_to_dict(cursor, cursor.fetchone())
+    conn.commit()
+    return task
 
 
 def mark_task_running(conn: sqlite3.Connection, task_id: str) -> None:
@@ -262,9 +280,11 @@ def insert_candidate(
         "confidence": int(candidate["confidence"]),
         "file_path": candidate["file"],
         "line": int(candidate["line"]),
+        "introduced_by_diff": candidate.get("introduced_by_diff"),
         "claim": candidate["claim"],
         "failure_mode": candidate["failure_mode"],
         "evidence_json": json.dumps(candidate["evidence"], sort_keys=True),
+        "suggested_fix": candidate.get("suggested_fix"),
         "status": candidate.get("status", "accepted"),
         "created_at": _now(),
     }
@@ -272,16 +292,63 @@ def insert_candidate(
         """
         insert into candidates (
           id, run_id, source_task_id, category, severity, confidence,
-          file_path, line, claim, failure_mode, evidence_json, status, created_at
+          file_path, line, introduced_by_diff, claim, failure_mode, evidence_json,
+          suggested_fix, status, created_at
         ) values (
           :id, :run_id, :source_task_id, :category, :severity, :confidence,
-          :file_path, :line, :claim, :failure_mode, :evidence_json, :status, :created_at
+          :file_path, :line, :introduced_by_diff, :claim, :failure_mode, :evidence_json,
+          :suggested_fix, :status, :created_at
         )
         """,
         row,
     )
     conn.commit()
     return row
+
+
+def candidate_rows_match_output(
+    conn: sqlite3.Connection,
+    source_task_id: str,
+    candidates: list[dict[str, Any]],
+) -> bool:
+    cursor = conn.execute(
+        """
+        select category, severity, confidence, file_path, line, introduced_by_diff,
+               claim, failure_mode, evidence_json, suggested_fix, status
+        from candidates
+        where source_task_id = ?
+        order by created_at, rowid
+        """,
+        (source_task_id,),
+    )
+    rows = [_row_to_dict(cursor, row) for row in cursor.fetchall()]
+    if len(rows) != len(candidates):
+        return False
+
+    for row, candidate in zip(rows, candidates):
+        if row["category"] != candidate["category"]:
+            return False
+        if row["severity"] != candidate["severity"]:
+            return False
+        if int(row["confidence"]) != int(candidate["confidence"]):
+            return False
+        if row["file_path"] != candidate["file"]:
+            return False
+        if int(row["line"]) != int(candidate["line"]):
+            return False
+        if row["introduced_by_diff"] != candidate.get("introduced_by_diff"):
+            return False
+        if row["claim"] != candidate["claim"]:
+            return False
+        if row["failure_mode"] != candidate["failure_mode"]:
+            return False
+        if json.loads(row["evidence_json"]) != candidate["evidence"]:
+            return False
+        if row["suggested_fix"] != candidate.get("suggested_fix"):
+            return False
+        if row["status"] != candidate.get("status", "accepted"):
+            return False
+    return True
 
 
 def insert_verification(

@@ -13,7 +13,7 @@ VALID_CANDIDATE = {
     "confidence": 90,
     "file": "app.py",
     "line": 12,
-    "introduced_by_diff": True,
+    "introduced_by_diff": "The changed comparison now checks the user tenant against itself.",
     "claim": "The invoice tenant is not checked.",
     "failure_mode": "A user can view another tenant's invoice.",
     "evidence": [{"path": "app.py", "line": 12, "quote": "user.company_id == user.company_id"}],
@@ -26,6 +26,24 @@ def test_valid_candidate_passes():
 
     assert result.valid is True
     assert result.errors == []
+
+
+def test_candidate_rejects_boolean_introduced_by_diff():
+    candidate = {**VALID_CANDIDATE, "introduced_by_diff": True}
+
+    result = validate_candidate(candidate)
+
+    assert result.valid is False
+    assert "introduced_by_diff must be a non-empty string" in result.errors
+
+
+def test_candidate_rejects_empty_introduced_by_diff():
+    candidate = {**VALID_CANDIDATE, "introduced_by_diff": "   "}
+
+    result = validate_candidate(candidate)
+
+    assert result.valid is False
+    assert "introduced_by_diff must be a non-empty string" in result.errors
 
 
 def test_candidate_without_file_fails():
@@ -78,4 +96,3 @@ def test_verification_with_invalid_verdict_fails():
 
     assert result.valid is False
     assert "invalid verdict: maybe" in result.errors
-

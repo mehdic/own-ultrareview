@@ -53,7 +53,7 @@ def simulated_scout_output(packet: dict[str, object], output_path: Path) -> None
                     "confidence": 94,
                     "file": "src/ultrareview/runtime/db.py",
                     "line": 24,
-                    "introduced_by_diff": True,
+                    "introduced_by_diff": "The diff removed foreign key enforcement from review database connections.",
                     "claim": "The runtime database no longer enforces foreign key constraints.",
                     "failure_mode": "Orphan tasks, candidates, or verifications can be inserted and later corrupt review state.",
                     "evidence": [

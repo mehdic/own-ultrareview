@@ -62,6 +62,8 @@ def _instruction_files(repo: Path) -> list[dict[str, str]]:
     files: list[dict[str, str]] = []
     for name in names:
         path = repo / name
+        if path.is_symlink():
+            continue
         if path.is_file():
             files.append({"path": name, "content": path.read_text(encoding="utf-8")})
     return files
@@ -72,6 +74,7 @@ def collect_git_context(repo_path: str | Path, base_ref: str, head_ref: str) -> 
     base_sha = _git(repo, "rev-parse", base_ref)
     head_sha = _git(repo, "rev-parse", head_ref)
     merge_base = _git(repo, "merge-base", base_ref, head_ref)
+    review_base_ref = merge_base
 
     return {
         "repo_path": str(repo),
@@ -80,9 +83,9 @@ def collect_git_context(repo_path: str | Path, base_ref: str, head_ref: str) -> 
         "base_sha": base_sha,
         "head_sha": head_sha,
         "merge_base": merge_base,
-        "changed_files": _changed_files(repo, base_ref, head_ref),
+        "changed_files": _changed_files(repo, review_base_ref, head_ref),
         "commit_log": _commit_log(repo, base_ref, head_ref),
         "instruction_files": _instruction_files(repo),
-        "diff_stat": _git(repo, "diff", "--stat", f"{base_ref}..{head_ref}"),
-        "diff": _git(repo, "diff", "--find-renames", f"{base_ref}..{head_ref}"),
+        "diff_stat": _git(repo, "diff", "--stat", f"{review_base_ref}..{head_ref}"),
+        "diff": _git(repo, "diff", "--find-renames", f"{review_base_ref}..{head_ref}"),
     }

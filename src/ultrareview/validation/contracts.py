@@ -66,6 +66,16 @@ def validate_candidate(candidate: dict[str, Any]) -> ValidationResult:
     if line is not None and (not isinstance(line, int) or line <= 0):
         errors.append("line must be a positive integer")
 
+    introduced_by_diff = candidate.get("introduced_by_diff")
+    if introduced_by_diff is not None and (
+        not isinstance(introduced_by_diff, str) or not introduced_by_diff.strip()
+    ):
+        errors.append("introduced_by_diff must be a non-empty string")
+
+    suggested_fix = candidate.get("suggested_fix")
+    if suggested_fix is not None and (not isinstance(suggested_fix, str) or not suggested_fix.strip()):
+        errors.append("suggested_fix must be a non-empty string")
+
     failure_mode = candidate.get("failure_mode")
     if candidate.get("severity") in {"critical", "must_change"} and not failure_mode:
         errors.append("failure_mode is required for critical and must_change findings")
@@ -87,4 +97,3 @@ def validate_verification(verification: dict[str, Any]) -> ValidationResult:
 
     errors.extend(_validate_evidence(verification))
     return ValidationResult(valid=not errors, errors=errors)
-

@@ -85,6 +85,8 @@ def _packet_for(
                 "Report only issues introduced or exposed by the diff.",
                 "Prefer no finding over speculative noise.",
                 "Every candidate must include file, line, failure mode, and evidence.",
+                "introduced_by_diff must explain why the diff introduced or exposed the issue.",
+                "suggested_fix must explain the concrete remediation.",
             ],
         },
         "severity_taxonomy": SEVERITY_TAXONOMY,
@@ -133,4 +135,3 @@ def build_scout_tasks(
         )
         tasks.append(task)
     return tasks
-

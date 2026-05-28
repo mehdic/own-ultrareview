@@ -21,13 +21,13 @@
     },
     "failure_mode": {"minLength": 1, "type": "string"},
     "file": {"minLength": 1, "type": "string"},
-    "introduced_by_diff": {"type": "boolean"},
+    "introduced_by_diff": {"minLength": 1, "type": "string"},
     "line": {"minimum": 1, "type": "integer"},
     "severity": {
       "enum": ["critical", "must_change", "better_to_change", "acceptable"],
       "type": "string"
     },
-    "suggested_fix": {"type": "string"},
+    "suggested_fix": {"minLength": 1, "type": "string"},
     "title": {"minLength": 1, "type": "string"}
   },
   "required": [
@@ -45,4 +45,3 @@
   ],
   "type": "object"
 }
-

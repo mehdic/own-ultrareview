@@ -12,14 +12,16 @@ Covered scenarios:
 - Init script run directory and database creation.
 - Git context script artifact creation.
 - Scout packet generation for all reviewer roles.
-- Sequential task leasing for Copilot/VS Code style sub-agents.
+- Parallel scout/verifier dispatch expectations, with sequential leasing as the fallback for hosts that cannot parallelize.
 - Scout output recording with valid and invalid simulated LLM outputs.
 - Verifier task generation and idempotency.
 - Verifier output recording.
 - Judge behavior for verified, rejected, and uncertain verdicts.
 - Report generation with findings and with no findings.
 - Finding action listing and persisted user decisions.
-- Resolution recording and full audit summaries after user decisions.
+- Batched presentation of all verified findings and decision questions after verification.
+- Resolution recording after all selected fixes are implemented together.
+- Full audit summaries after user decisions, including exactly which agents ran, what they found, what was fixed, and whether work used real subagents or simulated JSON.
 - Full CLI chain from start to final report.
 - Distribution assets: schemas, prompts, adapters, release gate.
 - Self-review: a copied Own UltraReview repo is intentionally broken, then reviewed end-to-end with simulated LLM scout/verifier outputs.

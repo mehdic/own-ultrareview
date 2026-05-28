@@ -1,6 +1,6 @@
 ---
 name: ultrareview
-description: Use when deeply reviewing a local PR, branch, or diff with sequential specialist agents, verifier checks, and a final bug-focused report.
+description: Use when deeply reviewing a local PR, branch, or diff with specialist agents, verifier checks, batched user decisions, and a final bug-focused report.
 ---
 
 # UltraReview
@@ -113,7 +113,7 @@ List verified issues and record the user's decision:
 
 ## Agent Sequence
 
-Run agents sequentially when the host cannot parallelize. Each agent reads a packet from `packets/`, writes JSON to `outputs/`, and records findings through the runtime scripts.
+Run scout and verifier subagents in parallel whenever the host supports parallelism. Use sequential leasing with `next` only as the fallback for hosts that cannot parallelize. Each agent reads a packet from `packets/`, writes JSON to `outputs/`, and records findings through the runtime scripts.
 
 1. Diff Cartographer
 2. Instruction Reviewer
@@ -126,7 +126,7 @@ Run agents sequentially when the host cannot parallelize. Each agent reads a pac
 9. Verifier Agents
 10. Judge/Aggregator
 
-In Copilot/VS Code, this runs as one master conversation plus sequential sub-agent calls. The database is the communication bus. Each sub-agent gets one packet, returns one JSON file, and the scripts validate and persist the result before the next sub-agent is leased.
+In Copilot/VS Code, this runs as one master conversation plus parallel sub-agent calls when available, or sequential calls when the host cannot parallelize. The database is the communication bus. Each sub-agent gets one packet, returns one JSON file, and the scripts validate and persist the result.
 
 ## Severity Taxonomy
 
@@ -149,7 +149,7 @@ Prefer no finding over speculative noise.
 
 ## Decision Rule
 
-After the final report, show the user the action list for each verified finding. Do not silently fix or ignore findings. Persist one of these decisions per finding:
+After verified findings are produced, show the user all findings and all decision questions in one batch. Do not ask one issue at a time, and do not silently fix or ignore findings. Persist one of these decisions per finding:
 
 - `fix`: implement or request a patch before merge.
 - `accept_risk`: user accepts the risk for this PR.
@@ -157,11 +157,13 @@ After the final report, show the user the action list for each verified finding.
 - `defer`: valid issue but intentionally moved to later work.
 - `needs_human`: requires product/security/domain owner decision.
 
-After the decision is acted on, record the resolution and emit the summary. The summary must tell the user:
+After the user chooses decisions, implement all selected fixes together. Then record each resolution and emit the summary. The summary must tell the user exactly:
 
-- what tasks/agents ran and their statuses,
+- which tasks/agents ran and their statuses,
+- what each agent found,
 - what candidates and verified findings were produced,
 - what the user decided for each finding,
-- what was fixed or why it was not fixed.
+- what was fixed or why it was not fixed,
+- whether scout/verifier work used real subagents or simulated JSON.
 
 If scout or verifier work was simulated, say that plainly in the human-facing summary. Do not imply real LLM sub-agents ran when the runtime only consumed deterministic JSON.

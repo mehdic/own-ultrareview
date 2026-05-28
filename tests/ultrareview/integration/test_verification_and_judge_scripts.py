@@ -25,11 +25,13 @@ def setup_candidate_and_verifier(tmp_path: Path) -> tuple[Path, dict[str, str]]:
             "confidence": 91,
             "file": "app.py",
             "line": 12,
+            "introduced_by_diff": "The diff changed the tenant comparison to compare user.company_id to itself.",
             "claim": "The invoice tenant is not checked.",
             "failure_mode": "A user can view another tenant's invoice.",
             "evidence": [
                 {"path": "app.py", "line": 12, "quote": "user.company_id == user.company_id"}
             ],
+            "suggested_fix": "Compare invoice.company_id to user.company_id.",
         },
     )
     verifier = db.create_task(

@@ -37,13 +37,34 @@ def main() -> int:
     task = conn.execute("select * from agent_tasks where id = ?", (args.task_id,)).fetchone()
     if task is None:
         raise SystemExit(f"unknown task id: {args.task_id}")
+    if task["phase"] != "scouting":
+        raise SystemExit("record-output only accepts scouting tasks; use ultrareview_record_verification.py for verification tasks")
 
-    inserted = []
     for index, candidate in enumerate(candidates):
         result = validate_candidate(candidate)
         if not result.valid:
             db.mark_task_failed(conn, args.task_id, f"candidate[{index}] invalid: {'; '.join(result.errors)}")
             raise SystemExit(f"candidate[{index}] invalid: {'; '.join(result.errors)}")
+
+    if task["status"] == "completed":
+        if task["output_path"] == str(output_path) and db.candidate_rows_match_output(conn, args.task_id, candidates):
+            conn.close()
+            print(
+                json.dumps(
+                    {
+                        "run_id": task["run_id"],
+                        "task_id": args.task_id,
+                        "inserted_candidates": 0,
+                        "next": "run ultrareview_next_task.py",
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 0
+        raise SystemExit(f"task {args.task_id} is already completed with different recorded output")
+
+    inserted = []
+    for candidate in candidates:
         inserted.append(db.insert_candidate(conn, task["run_id"], args.task_id, candidate))
 
     db.mark_task_completed(conn, args.task_id, str(output_path))
@@ -65,4 +86,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

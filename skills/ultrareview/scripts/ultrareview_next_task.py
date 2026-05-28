@@ -60,8 +60,8 @@ def main() -> int:
         print(json.dumps({"run_id": run["id"], "status": "complete", "next": "run ultrareview_judge.py"}, sort_keys=True))
         return 0
 
-    db.mark_task_running(conn, task["id"])
     packet_path = run_dir / task["input_path"]
+    next_script = "ultrareview_record_verification.py" if task["phase"] == "verification" else "ultrareview_record_output.py"
     payload = {
         "run_id": run["id"],
         "task_id": task["id"],
@@ -70,7 +70,7 @@ def main() -> int:
         "status": "running",
         "packet_path": str(packet_path),
         "handoff": "Give this packet to the next sequential sub-agent, then record its JSON output.",
-        "next": "run ultrareview_record_output.py",
+        "next": f"run {next_script}",
     }
     print(json.dumps(payload, sort_keys=True))
     return 0

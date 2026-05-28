@@ -82,7 +82,7 @@ def test_cli_prepare_verifiers_is_idempotent(tmp_path):
                         "confidence": 80,
                         "file": "app.py",
                         "line": 1,
-                        "introduced_by_diff": True,
+                        "introduced_by_diff": "The diff changed the function output for this edge case.",
                         "claim": "The value is wrong.",
                         "failure_mode": "The caller receives an invalid value.",
                         "evidence": [{"path": "app.py", "line": 1, "quote": "return 0"}],

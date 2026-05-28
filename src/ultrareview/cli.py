@@ -21,6 +21,14 @@ RUN_SUBDIRS = (
 )
 
 AVAILABLE_ACTIONS = ["fix", "accept_risk", "ignore", "defer", "needs_human"]
+DECISION_QUESTION = "How should UltraReview handle this finding?"
+DECISION_OPTIONS = [
+    {"value": "fix", "label": "Fix before merge"},
+    {"value": "accept_risk", "label": "Accept the risk"},
+    {"value": "ignore", "label": "Ignore after review"},
+    {"value": "defer", "label": "Defer to later work"},
+    {"value": "needs_human", "label": "Needs human decision"},
+]
 RESOLUTION_STATUSES = ["fixed", "not_fixed", "accepted", "deferred", "ignored", "needs_human"]
 
 
@@ -110,6 +118,7 @@ def command_next(args: argparse.Namespace) -> int:
     db_path = Path(args.db).expanduser().resolve()
     run_dir = db_path.parent
     conn = db.connect(db_path)
+    db.init_schema(conn)
     conn.row_factory = sqlite3.Row
     run = _first_run(conn)
     task = db.next_task(conn, run["id"])
@@ -138,7 +147,7 @@ def command_next(args: argparse.Namespace) -> int:
             return 0
         _print({"run_id": run["id"], "status": "complete", "next": "own-ultrareview judge --db <db_path>"})
         return 0
-    db.mark_task_running(conn, task["id"])
+    next_command = "record-verification" if task["phase"] == "verification" else "record-output"
     _print(
         {
             "run_id": run["id"],
@@ -148,7 +157,7 @@ def command_next(args: argparse.Namespace) -> int:
             "status": "running",
             "packet_path": str(run_dir / task["input_path"]),
             "handoff": "Give this packet to the next sequential sub-agent, then record its JSON output.",
-            "next": "own-ultrareview record-output --db <db_path> --task-id <task_id> --output <output.json>",
+            "next": f"own-ultrareview {next_command} --db <db_path> --task-id <task_id> --output <output.json>",
         }
     )
     return 0
@@ -167,13 +176,31 @@ def command_record_output(args: argparse.Namespace) -> int:
     task = conn.execute("select * from agent_tasks where id = ?", (args.task_id,)).fetchone()
     if task is None:
         raise SystemExit(f"unknown task id: {args.task_id}")
+    if task["phase"] != "scouting":
+        raise SystemExit("record-output only accepts scouting tasks; use record-verification for verification tasks")
 
-    inserted = []
     for index, candidate in enumerate(candidates):
         result = validate_candidate(candidate)
         if not result.valid:
             db.mark_task_failed(conn, args.task_id, f"candidate[{index}] invalid: {'; '.join(result.errors)}")
             raise SystemExit(f"candidate[{index}] invalid: {'; '.join(result.errors)}")
+
+    if task["status"] == "completed":
+        if task["output_path"] == str(output_path) and db.candidate_rows_match_output(conn, args.task_id, candidates):
+            conn.close()
+            _print(
+                {
+                    "run_id": task["run_id"],
+                    "task_id": args.task_id,
+                    "inserted_candidates": 0,
+                    "next": "own-ultrareview next --db <db_path>",
+                }
+            )
+            return 0
+        raise SystemExit(f"task {args.task_id} is already completed with different recorded output")
+
+    inserted = []
+    for candidate in candidates:
         inserted.append(db.insert_candidate(conn, task["run_id"], args.task_id, candidate))
     db.mark_task_completed(conn, args.task_id, str(output_path))
     conn.close()
@@ -222,9 +249,11 @@ def command_prepare_verifiers(args: argparse.Namespace) -> int:
                 "confidence": candidate["confidence"],
                 "file": candidate["file_path"],
                 "line": candidate["line"],
+                "introduced_by_diff": candidate["introduced_by_diff"],
                 "claim": candidate["claim"],
                 "failure_mode": candidate["failure_mode"],
                 "evidence": json.loads(candidate["evidence_json"]),
+                "suggested_fix": candidate["suggested_fix"],
             },
             "instructions": [
                 "Assume the scout may be wrong.",
@@ -285,9 +314,11 @@ def _finding_report(candidate: sqlite3.Row, verification: sqlite3.Row) -> dict[s
         "confidence": candidate["confidence"],
         "file": candidate["file_path"],
         "line": candidate["line"],
+        "introduced_by_diff": candidate["introduced_by_diff"],
         "claim": candidate["claim"],
         "failure_mode": candidate["failure_mode"],
         "evidence": json.loads(candidate["evidence_json"]),
+        "suggested_fix": candidate["suggested_fix"],
         "verification_verdict": verification["verdict"],
         "verification_reason": verification["reason"],
         "verification_evidence": json.loads(verification["evidence_json"]),
@@ -297,6 +328,7 @@ def _finding_report(candidate: sqlite3.Row, verification: sqlite3.Row) -> dict[s
 def command_judge(args: argparse.Namespace) -> int:
     db_path = Path(args.db).expanduser().resolve()
     conn = db.connect(db_path)
+    db.init_schema(conn)
     conn.row_factory = sqlite3.Row
     run = _first_run(conn)
     rows = conn.execute(
@@ -357,7 +389,13 @@ def _render_markdown(run: sqlite3.Row, findings: list[dict[str, object]]) -> str
                 "",
                 f"**Failure mode:** {finding['failure_mode']}",
                 "",
+                f"**Introduced by diff:** {finding.get('introduced_by_diff') or 'Not recorded.'}",
+                "",
+                f"**Suggested fix:** {finding.get('suggested_fix') or 'Not recorded.'}",
+                "",
                 f"**Verification:** {finding.get('verification_verdict', 'unknown')} - {finding.get('verification_reason', '')}",
+                "",
+                f"**Decision question:** {DECISION_QUESTION}",
                 "",
                 f"**Available actions:** {', '.join(AVAILABLE_ACTIONS)}",
                 "",
@@ -377,6 +415,8 @@ def command_report(args: argparse.Namespace) -> int:
         finding = json.loads(row["report_json"])
         finding["id"] = row["id"]
         finding["available_actions"] = AVAILABLE_ACTIONS
+        finding["decision_question"] = DECISION_QUESTION
+        finding["decision_options"] = DECISION_OPTIONS
         findings.append(finding)
     report = {
         "run": {
@@ -420,7 +460,8 @@ def _resolution_payload(row: sqlite3.Row) -> dict[str, object] | None:
 
 def command_actions(args: argparse.Namespace) -> int:
     db_path = Path(args.db).expanduser().resolve()
-    conn = sqlite3.connect(db_path)
+    conn = db.connect(db_path)
+    db.init_schema(conn)
     conn.row_factory = sqlite3.Row
     run = _first_run(conn)
     rows = conn.execute(
@@ -457,11 +498,15 @@ def command_actions(args: argparse.Namespace) -> int:
                 "line": report.get("line"),
                 "claim": report.get("claim"),
                 "failure_mode": report.get("failure_mode"),
+                "introduced_by_diff": report.get("introduced_by_diff"),
+                "suggested_fix": report.get("suggested_fix"),
                 "verification": {
                     "verdict": report.get("verification_verdict"),
                     "reason": report.get("verification_reason"),
                 },
                 "available_actions": AVAILABLE_ACTIONS,
+                "decision_question": DECISION_QUESTION,
+                "decision_options": DECISION_OPTIONS,
                 "decision": decision,
                 "resolution": _resolution_payload(row),
             }
@@ -474,6 +519,7 @@ def command_actions(args: argparse.Namespace) -> int:
 def command_decide(args: argparse.Namespace) -> int:
     db_path = Path(args.db).expanduser().resolve()
     conn = db.connect(db_path)
+    db.init_schema(conn)
     conn.row_factory = sqlite3.Row
     finding = conn.execute(
         "select * from final_findings where id = ?",
@@ -503,6 +549,7 @@ def command_decide(args: argparse.Namespace) -> int:
 def command_resolve(args: argparse.Namespace) -> int:
     db_path = Path(args.db).expanduser().resolve()
     conn = db.connect(db_path)
+    db.init_schema(conn)
     conn.row_factory = sqlite3.Row
     finding = conn.execute(
         "select * from final_findings where id = ?",
@@ -566,10 +613,14 @@ def _summary_findings(conn: sqlite3.Connection, run_id: str) -> list[dict[str, o
                 "line": report.get("line"),
                 "claim": report.get("claim"),
                 "failure_mode": report.get("failure_mode"),
+                "introduced_by_diff": report.get("introduced_by_diff"),
+                "suggested_fix": report.get("suggested_fix"),
                 "verification": {
                     "verdict": report.get("verification_verdict"),
                     "reason": report.get("verification_reason"),
                 },
+                "decision_question": DECISION_QUESTION,
+                "decision_options": DECISION_OPTIONS,
                 "decision": _decision_payload(row) if row["decision"] is not None else None,
                 "resolution": _resolution_payload(row),
             }
@@ -656,6 +707,8 @@ def _summary_markdown(summary: dict[str, object]) -> str:
                 f"- Finding ID: `{finding['id']}`",
                 f"- Claim: {finding['claim']}",
                 f"- Failure mode: {finding['failure_mode']}",
+                f"- Introduced by diff: {finding.get('introduced_by_diff') or 'Not recorded.'}",
+                f"- Suggested fix: {finding.get('suggested_fix') or 'Not recorded.'}",
                 f"- Verification: {finding['verification']['verdict']} - {finding['verification']['reason']}",
                 "",
             ]
@@ -684,7 +737,8 @@ def _summary_markdown(summary: dict[str, object]) -> str:
 def command_summary(args: argparse.Namespace) -> int:
     db_path = Path(args.db).expanduser().resolve()
     run_dir = db_path.parent
-    conn = sqlite3.connect(db_path)
+    conn = db.connect(db_path)
+    db.init_schema(conn)
     conn.row_factory = sqlite3.Row
     run = _first_run(conn)
     summary = _build_summary(conn, run)
