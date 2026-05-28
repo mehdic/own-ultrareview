@@ -11,6 +11,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+AVAILABLE_ACTIONS = ["fix", "accept_risk", "ignore", "defer", "needs_human"]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render final UltraReview report files.")
@@ -39,11 +41,15 @@ def _markdown(run: sqlite3.Row, findings: list[dict[str, object]]) -> str:
             [
                 f"## {index}. {severity} - {location}",
                 "",
+                f"**Finding ID:** `{finding['id']}`",
+                "",
                 f"**Claim:** {finding['claim']}",
                 "",
                 f"**Failure mode:** {finding['failure_mode']}",
                 "",
                 f"**Verification:** {finding.get('verification_verdict', 'unknown')} - {finding.get('verification_reason', '')}",
+                "",
+                f"**Available actions:** {', '.join(AVAILABLE_ACTIONS)}",
                 "",
             ]
         )
@@ -61,7 +67,12 @@ def main() -> int:
         raise SystemExit(f"no run found in {db_path}")
 
     rows = conn.execute("select * from final_findings order by created_at, rowid").fetchall()
-    findings = [json.loads(row["report_json"]) for row in rows]
+    findings = []
+    for row in rows:
+        finding = json.loads(row["report_json"])
+        finding["id"] = row["id"]
+        finding["available_actions"] = AVAILABLE_ACTIONS
+        findings.append(finding)
     report = {
         "run": {
             "id": run["id"],

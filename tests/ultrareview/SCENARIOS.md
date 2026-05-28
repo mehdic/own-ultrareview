@@ -18,9 +18,9 @@ Covered scenarios:
 - Verifier output recording.
 - Judge behavior for verified, rejected, and uncertain verdicts.
 - Report generation with findings and with no findings.
+- Finding action listing and persisted user decisions.
 - Full CLI chain from start to final report.
 - Distribution assets: schemas, prompts, adapters, release gate.
 - Self-review: a copied Own UltraReview repo is intentionally broken, then reviewed end-to-end with simulated LLM scout/verifier outputs.
 
 The LLM work is represented by deterministic JSON files. Everything else is real runtime code, real SQLite state, real git repositories, and real CLI calls.
-

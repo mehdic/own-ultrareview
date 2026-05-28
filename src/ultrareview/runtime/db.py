@@ -96,6 +96,17 @@ def init_schema(conn: sqlite3.Connection) -> None:
           report_json text not null,
           created_at text not null
         );
+
+        create table if not exists finding_decisions (
+          id text primary key,
+          run_id text not null references runs(id) on delete cascade,
+          final_finding_id text not null references final_findings(id) on delete cascade,
+          decision text not null,
+          note text,
+          created_at text not null,
+          updated_at text not null,
+          unique(final_finding_id)
+        );
         """
     )
     conn.commit()
@@ -318,6 +329,45 @@ def insert_final_finding(
           :id, :run_id, :candidate_id, :final_severity, :confidence,
           :report_json, :created_at
         )
+        """,
+        row,
+    )
+    conn.commit()
+    return row
+
+
+def upsert_finding_decision(
+    conn: sqlite3.Connection,
+    run_id: str,
+    final_finding_id: str,
+    decision: str,
+    note: str | None,
+) -> dict[str, Any]:
+    now = _now()
+    existing = conn.execute(
+        "select id, created_at from finding_decisions where final_finding_id = ?",
+        (final_finding_id,),
+    ).fetchone()
+    row = {
+        "id": existing[0] if existing else _id("decision"),
+        "run_id": run_id,
+        "final_finding_id": final_finding_id,
+        "decision": decision,
+        "note": note,
+        "created_at": existing[1] if existing else now,
+        "updated_at": now,
+    }
+    conn.execute(
+        """
+        insert into finding_decisions (
+          id, run_id, final_finding_id, decision, note, created_at, updated_at
+        ) values (
+          :id, :run_id, :final_finding_id, :decision, :note, :created_at, :updated_at
+        )
+        on conflict(final_finding_id) do update set
+          decision = excluded.decision,
+          note = excluded.note,
+          updated_at = excluded.updated_at
         """,
         row,
     )

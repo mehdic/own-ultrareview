@@ -102,6 +102,13 @@ python skills/ultrareview/scripts/ultrareview_judge.py --db <run_dir>/review.sql
 python skills/ultrareview/scripts/ultrareview_report.py --db <run_dir>/review.sqlite
 ```
 
+List verified issues and record the user's decision:
+
+```bash
+/Users/mehdichaouachi/.openclaw/bin/own-ultrareview actions --db <run_dir>/review.sqlite
+/Users/mehdichaouachi/.openclaw/bin/own-ultrareview decide --db <run_dir>/review.sqlite --finding-id <finding_id> --decision fix --note "Patch before merge."
+```
+
 ## Agent Sequence
 
 Run agents sequentially when the host cannot parallelize. Each agent reads a packet from `packets/`, writes JSON to `outputs/`, and records findings through the runtime scripts.
@@ -137,3 +144,13 @@ Do not report a finding unless it has:
 - verifier result: `verified`, `rejected`, or `uncertain`.
 
 Prefer no finding over speculative noise.
+
+## Decision Rule
+
+After the final report, show the user the action list for each verified finding. Do not silently fix or ignore findings. Persist one of these decisions per finding:
+
+- `fix`: implement or request a patch before merge.
+- `accept_risk`: user accepts the risk for this PR.
+- `ignore`: verified as non-actionable after human review.
+- `defer`: valid issue but intentionally moved to later work.
+- `needs_human`: requires product/security/domain owner decision.

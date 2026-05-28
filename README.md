@@ -27,6 +27,8 @@ own-ultrareview next --db <db_path>
 own-ultrareview record-verification --db <db_path> --task-id <task_id> --output <verifier.json>
 own-ultrareview judge --db <db_path>
 own-ultrareview report --db <db_path>
+own-ultrareview actions --db <db_path>
+own-ultrareview decide --db <db_path> --finding-id <finding_id> --decision fix --note "Patch before merge."
 ```
 
 ## Rules
@@ -37,6 +39,7 @@ own-ultrareview report --db <db_path>
 - Use local `git` and local files.
 - External repositories, if needed, belong under `<run_dir>/temp/external-repos/`.
 - No finding reaches the report unless it survives verifier review.
+- Every verified finding can be listed with available actions and assigned a persisted decision: `fix`, `accept_risk`, `ignore`, `defer`, or `needs_human`.
 
 ## Development Gate
 

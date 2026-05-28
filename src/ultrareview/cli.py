@@ -20,6 +20,8 @@ RUN_SUBDIRS = (
     "temp/external-repos",
 )
 
+AVAILABLE_ACTIONS = ["fix", "accept_risk", "ignore", "defer", "needs_human"]
+
 
 def _print(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, sort_keys=True))
@@ -348,11 +350,15 @@ def _render_markdown(run: sqlite3.Row, findings: list[dict[str, object]]) -> str
             [
                 f"## {index}. {str(finding['severity']).upper()} - {finding['file']}:{finding['line']}",
                 "",
+                f"**Finding ID:** `{finding['id']}`",
+                "",
                 f"**Claim:** {finding['claim']}",
                 "",
                 f"**Failure mode:** {finding['failure_mode']}",
                 "",
                 f"**Verification:** {finding.get('verification_verdict', 'unknown')} - {finding.get('verification_reason', '')}",
+                "",
+                f"**Available actions:** {', '.join(AVAILABLE_ACTIONS)}",
                 "",
             ]
         )
@@ -365,10 +371,12 @@ def command_report(args: argparse.Namespace) -> int:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     run = _first_run(conn)
-    findings = [
-        json.loads(row["report_json"])
-        for row in conn.execute("select * from final_findings order by created_at, rowid").fetchall()
-    ]
+    findings = []
+    for row in conn.execute("select * from final_findings order by created_at, rowid").fetchall():
+        finding = json.loads(row["report_json"])
+        finding["id"] = row["id"]
+        finding["available_actions"] = AVAILABLE_ACTIONS
+        findings.append(finding)
     report = {
         "run": {
             "id": run["id"],
@@ -385,6 +393,92 @@ def command_report(args: argparse.Namespace) -> int:
     json_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     conn.close()
     _print({"run_id": run["id"], "finding_count": len(findings), "markdown_path": str(markdown_path), "json_path": str(json_path)})
+    return 0
+
+
+def _decision_payload(row: sqlite3.Row | None) -> dict[str, object] | None:
+    if row is None:
+        return None
+    return {
+        "decision": row["decision"],
+        "note": row["note"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def command_actions(args: argparse.Namespace) -> int:
+    db_path = Path(args.db).expanduser().resolve()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    run = _first_run(conn)
+    rows = conn.execute(
+        """
+        select f.*, d.decision, d.note, d.updated_at
+        from final_findings f
+        left join finding_decisions d on d.final_finding_id = f.id
+        where f.run_id = ?
+        order by f.created_at, f.rowid
+        """,
+        (run["id"],),
+    ).fetchall()
+
+    findings = []
+    open_count = 0
+    for row in rows:
+        report = json.loads(row["report_json"])
+        decision = None
+        if row["decision"] is None:
+            open_count += 1
+        else:
+            decision = _decision_payload(row)
+        findings.append(
+            {
+                "id": row["id"],
+                "severity": row["final_severity"],
+                "confidence": row["confidence"],
+                "file": report.get("file"),
+                "line": report.get("line"),
+                "claim": report.get("claim"),
+                "failure_mode": report.get("failure_mode"),
+                "verification": {
+                    "verdict": report.get("verification_verdict"),
+                    "reason": report.get("verification_reason"),
+                },
+                "available_actions": AVAILABLE_ACTIONS,
+                "decision": decision,
+            }
+        )
+    conn.close()
+    _print({"run_id": run["id"], "open_finding_count": open_count, "findings": findings})
+    return 0
+
+
+def command_decide(args: argparse.Namespace) -> int:
+    db_path = Path(args.db).expanduser().resolve()
+    conn = db.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    finding = conn.execute(
+        "select * from final_findings where id = ?",
+        (args.finding_id,),
+    ).fetchone()
+    if finding is None:
+        raise SystemExit(f"unknown finding id: {args.finding_id}")
+    decision = db.upsert_finding_decision(
+        conn,
+        finding["run_id"],
+        args.finding_id,
+        args.decision,
+        args.note,
+    )
+    conn.close()
+    _print(
+        {
+            "run_id": finding["run_id"],
+            "finding_id": args.finding_id,
+            "decision": decision["decision"],
+            "status": "recorded",
+        }
+    )
     return 0
 
 
@@ -427,6 +521,17 @@ def build_parser() -> argparse.ArgumentParser:
     report = sub.add_parser("report", help="Render final report files.")
     report.add_argument("--db", required=True, help="Path to review.sqlite.")
     report.set_defaults(func=command_report)
+
+    actions = sub.add_parser("actions", help="List verified findings and available user decisions.")
+    actions.add_argument("--db", required=True, help="Path to review.sqlite.")
+    actions.set_defaults(func=command_actions)
+
+    decide = sub.add_parser("decide", help="Record a user decision for a finding.")
+    decide.add_argument("--db", required=True, help="Path to review.sqlite.")
+    decide.add_argument("--finding-id", required=True, help="Final finding id.")
+    decide.add_argument("--decision", required=True, choices=AVAILABLE_ACTIONS, help="Decision to record.")
+    decide.add_argument("--note", default=None, help="Optional decision note.")
+    decide.set_defaults(func=command_decide)
 
     return parser
 

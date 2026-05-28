@@ -68,6 +68,10 @@ def test_report_script_writes_markdown_and_json(tmp_path):
     assert "# UltraReview Report" in markdown
     assert "MUST_CHANGE" in markdown
     assert "app.py:12" in markdown
+    assert "Finding ID" in markdown
+    assert "Available actions" in markdown
+    assert report_json["findings"][0]["id"]
+    assert report_json["findings"][0]["available_actions"] == ["fix", "accept_risk", "ignore", "defer", "needs_human"]
     assert report_json["findings"][0]["claim"] == "The invoice tenant is not checked."
 
 
