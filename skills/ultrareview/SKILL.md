@@ -107,6 +107,8 @@ List verified issues and record the user's decision:
 ```bash
 /Users/mehdichaouachi/.openclaw/bin/own-ultrareview actions --db <run_dir>/review.sqlite
 /Users/mehdichaouachi/.openclaw/bin/own-ultrareview decide --db <run_dir>/review.sqlite --finding-id <finding_id> --decision fix --note "Patch before merge."
+/Users/mehdichaouachi/.openclaw/bin/own-ultrareview resolve --db <run_dir>/review.sqlite --finding-id <finding_id> --status fixed --summary "Patched before merge." --evidence "commit abc123"
+/Users/mehdichaouachi/.openclaw/bin/own-ultrareview summary --db <run_dir>/review.sqlite
 ```
 
 ## Agent Sequence
@@ -154,3 +156,12 @@ After the final report, show the user the action list for each verified finding.
 - `ignore`: verified as non-actionable after human review.
 - `defer`: valid issue but intentionally moved to later work.
 - `needs_human`: requires product/security/domain owner decision.
+
+After the decision is acted on, record the resolution and emit the summary. The summary must tell the user:
+
+- what tasks/agents ran and their statuses,
+- what candidates and verified findings were produced,
+- what the user decided for each finding,
+- what was fixed or why it was not fixed.
+
+If scout or verifier work was simulated, say that plainly in the human-facing summary. Do not imply real LLM sub-agents ran when the runtime only consumed deterministic JSON.

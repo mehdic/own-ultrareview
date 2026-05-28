@@ -19,6 +19,7 @@ Covered scenarios:
 - Judge behavior for verified, rejected, and uncertain verdicts.
 - Report generation with findings and with no findings.
 - Finding action listing and persisted user decisions.
+- Resolution recording and full audit summaries after user decisions.
 - Full CLI chain from start to final report.
 - Distribution assets: schemas, prompts, adapters, release gate.
 - Self-review: a copied Own UltraReview repo is intentionally broken, then reviewed end-to-end with simulated LLM scout/verifier outputs.

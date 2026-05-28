@@ -21,6 +21,7 @@ RUN_SUBDIRS = (
 )
 
 AVAILABLE_ACTIONS = ["fix", "accept_risk", "ignore", "defer", "needs_human"]
+RESOLUTION_STATUSES = ["fixed", "not_fixed", "accepted", "deferred", "ignored", "needs_human"]
 
 
 def _print(payload: dict[str, Any]) -> None:
@@ -406,6 +407,17 @@ def _decision_payload(row: sqlite3.Row | None) -> dict[str, object] | None:
     }
 
 
+def _resolution_payload(row: sqlite3.Row) -> dict[str, object] | None:
+    if row["resolution_status"] is None:
+        return None
+    return {
+        "status": row["resolution_status"],
+        "summary": row["resolution_summary"],
+        "evidence": json.loads(row["resolution_evidence_json"]),
+        "updated_at": row["resolution_updated_at"],
+    }
+
+
 def command_actions(args: argparse.Namespace) -> int:
     db_path = Path(args.db).expanduser().resolve()
     conn = sqlite3.connect(db_path)
@@ -414,8 +426,13 @@ def command_actions(args: argparse.Namespace) -> int:
     rows = conn.execute(
         """
         select f.*, d.decision, d.note, d.updated_at
+             , r.status as resolution_status
+             , r.summary as resolution_summary
+             , r.evidence_json as resolution_evidence_json
+             , r.updated_at as resolution_updated_at
         from final_findings f
         left join finding_decisions d on d.final_finding_id = f.id
+        left join finding_resolutions r on r.final_finding_id = f.id
         where f.run_id = ?
         order by f.created_at, f.rowid
         """,
@@ -446,6 +463,7 @@ def command_actions(args: argparse.Namespace) -> int:
                 },
                 "available_actions": AVAILABLE_ACTIONS,
                 "decision": decision,
+                "resolution": _resolution_payload(row),
             }
         )
     conn.close()
@@ -477,6 +495,210 @@ def command_decide(args: argparse.Namespace) -> int:
             "finding_id": args.finding_id,
             "decision": decision["decision"],
             "status": "recorded",
+        }
+    )
+    return 0
+
+
+def command_resolve(args: argparse.Namespace) -> int:
+    db_path = Path(args.db).expanduser().resolve()
+    conn = db.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    finding = conn.execute(
+        "select * from final_findings where id = ?",
+        (args.finding_id,),
+    ).fetchone()
+    if finding is None:
+        raise SystemExit(f"unknown finding id: {args.finding_id}")
+    resolution = db.upsert_finding_resolution(
+        conn,
+        finding["run_id"],
+        args.finding_id,
+        args.status,
+        args.summary,
+        args.evidence,
+    )
+    conn.close()
+    _print(
+        {
+            "run_id": finding["run_id"],
+            "finding_id": args.finding_id,
+            "resolution": resolution["status"],
+            "status": "recorded",
+        }
+    )
+    return 0
+
+
+def _count_by(rows: list[sqlite3.Row], key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        value = str(row[key])
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
+def _summary_findings(conn: sqlite3.Connection, run_id: str) -> list[dict[str, object]]:
+    rows = conn.execute(
+        """
+        select f.*, d.decision, d.note, d.updated_at
+             , r.status as resolution_status
+             , r.summary as resolution_summary
+             , r.evidence_json as resolution_evidence_json
+             , r.updated_at as resolution_updated_at
+        from final_findings f
+        left join finding_decisions d on d.final_finding_id = f.id
+        left join finding_resolutions r on r.final_finding_id = f.id
+        where f.run_id = ?
+        order by f.created_at, f.rowid
+        """,
+        (run_id,),
+    ).fetchall()
+    findings = []
+    for row in rows:
+        report = json.loads(row["report_json"])
+        findings.append(
+            {
+                "id": row["id"],
+                "severity": row["final_severity"],
+                "confidence": row["confidence"],
+                "file": report.get("file"),
+                "line": report.get("line"),
+                "claim": report.get("claim"),
+                "failure_mode": report.get("failure_mode"),
+                "verification": {
+                    "verdict": report.get("verification_verdict"),
+                    "reason": report.get("verification_reason"),
+                },
+                "decision": _decision_payload(row) if row["decision"] is not None else None,
+                "resolution": _resolution_payload(row),
+            }
+        )
+    return findings
+
+
+def _build_summary(conn: sqlite3.Connection, run: sqlite3.Row) -> dict[str, object]:
+    tasks = conn.execute(
+        """
+        select id, role, phase, status, input_path, output_path, error, started_at, finished_at
+        from agent_tasks
+        where run_id = ?
+        order by created_at, rowid
+        """,
+        (run["id"],),
+    ).fetchall()
+    verifications = conn.execute(
+        "select verdict from verifications where run_id = ?",
+        (run["id"],),
+    ).fetchall()
+    candidate_count = conn.execute("select count(*) from candidates where run_id = ?", (run["id"],)).fetchone()[0]
+    findings = _summary_findings(conn, run["id"])
+    return {
+        "run": {
+            "id": run["id"],
+            "repo_path": run["repo_path"],
+            "base_ref": run["base_ref"],
+            "head_ref": run["head_ref"],
+            "base_sha": run["base_sha"],
+            "head_sha": run["head_sha"],
+            "mode": run["mode"],
+        },
+        "tasks": {
+            "total": len(tasks),
+            "by_status": _count_by(tasks, "status"),
+            "by_phase": _count_by(tasks, "phase"),
+            "items": [dict(task) for task in tasks],
+        },
+        "review": {
+            "candidate_count": candidate_count,
+            "verification_count": len(verifications),
+            "verifications_by_verdict": _count_by(verifications, "verdict"),
+            "final_finding_count": len(findings),
+            "open_decision_count": sum(1 for finding in findings if finding["decision"] is None),
+            "resolved_finding_count": sum(1 for finding in findings if finding["resolution"] is not None),
+        },
+        "findings": findings,
+    }
+
+
+def _summary_markdown(summary: dict[str, object]) -> str:
+    run = summary["run"]
+    tasks = summary["tasks"]
+    review = summary["review"]
+    findings = summary["findings"]
+    lines = [
+        "# UltraReview Run Summary",
+        "",
+        f"- Run: `{run['id']}`",
+        f"- Repo: `{run['repo_path']}`",
+        f"- Range: `{run['base_ref']}..{run['head_ref']}`",
+        "",
+        "## What Ran",
+        "",
+        f"- Tasks: {tasks['total']}",
+        f"- By phase: `{json.dumps(tasks['by_phase'], sort_keys=True)}`",
+        f"- By status: `{json.dumps(tasks['by_status'], sort_keys=True)}`",
+        "",
+        "## What Was Found",
+        "",
+        f"- Candidates: {review['candidate_count']}",
+        f"- Verifications: {review['verification_count']}",
+        f"- Final findings: {review['final_finding_count']}",
+        "",
+    ]
+    if not findings:
+        lines.extend(["No verified findings survived judge review.", ""])
+    for index, finding in enumerate(findings, start=1):
+        lines.extend(
+            [
+                f"### {index}. {str(finding['severity']).upper()} - {finding['file']}:{finding['line']}",
+                "",
+                f"- Finding ID: `{finding['id']}`",
+                f"- Claim: {finding['claim']}",
+                f"- Failure mode: {finding['failure_mode']}",
+                f"- Verification: {finding['verification']['verdict']} - {finding['verification']['reason']}",
+                "",
+            ]
+        )
+
+    lines.extend(["## What Was Decided", ""])
+    if not findings:
+        lines.extend(["No user decisions were needed.", ""])
+    for finding in findings:
+        decision = finding["decision"]
+        value = "pending" if decision is None else f"{decision['decision']} - {decision.get('note') or ''}".strip()
+        lines.append(f"- `{finding['id']}`: {value}")
+    lines.append("")
+
+    lines.extend(["## What Was Fixed", ""])
+    if not findings:
+        lines.extend(["No fixes were needed.", ""])
+    for finding in findings:
+        resolution = finding["resolution"]
+        value = "pending" if resolution is None else f"{resolution['status']} - {resolution['summary']}"
+        lines.append(f"- `{finding['id']}`: {value}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def command_summary(args: argparse.Namespace) -> int:
+    db_path = Path(args.db).expanduser().resolve()
+    run_dir = db_path.parent
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    run = _first_run(conn)
+    summary = _build_summary(conn, run)
+    markdown_path = run_dir / "run-summary.md"
+    json_path = run_dir / "run-summary.json"
+    markdown_path.write_text(_summary_markdown(summary), encoding="utf-8")
+    json_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    conn.close()
+    _print(
+        {
+            "run_id": run["id"],
+            "finding_count": summary["review"]["final_finding_count"],
+            "markdown_path": str(markdown_path),
+            "json_path": str(json_path),
         }
     )
     return 0
@@ -532,6 +754,18 @@ def build_parser() -> argparse.ArgumentParser:
     decide.add_argument("--decision", required=True, choices=AVAILABLE_ACTIONS, help="Decision to record.")
     decide.add_argument("--note", default=None, help="Optional decision note.")
     decide.set_defaults(func=command_decide)
+
+    resolve = sub.add_parser("resolve", help="Record what happened after a finding decision.")
+    resolve.add_argument("--db", required=True, help="Path to review.sqlite.")
+    resolve.add_argument("--finding-id", required=True, help="Final finding id.")
+    resolve.add_argument("--status", required=True, choices=RESOLUTION_STATUSES, help="Resolution status.")
+    resolve.add_argument("--summary", required=True, help="What changed or why no change was made.")
+    resolve.add_argument("--evidence", action="append", default=[], help="Commit, file, test, or note supporting the resolution.")
+    resolve.set_defaults(func=command_resolve)
+
+    summary = sub.add_parser("summary", help="Render the full audit trail: tasks, findings, decisions, and resolutions.")
+    summary.add_argument("--db", required=True, help="Path to review.sqlite.")
+    summary.set_defaults(func=command_summary)
 
     return parser
 

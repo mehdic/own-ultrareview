@@ -29,6 +29,8 @@ own-ultrareview judge --db <db_path>
 own-ultrareview report --db <db_path>
 own-ultrareview actions --db <db_path>
 own-ultrareview decide --db <db_path> --finding-id <finding_id> --decision fix --note "Patch before merge."
+own-ultrareview resolve --db <db_path> --finding-id <finding_id> --status fixed --summary "Patched tenant guard." --evidence "commit abc123"
+own-ultrareview summary --db <db_path>
 ```
 
 ## Rules
@@ -40,6 +42,7 @@ own-ultrareview decide --db <db_path> --finding-id <finding_id> --decision fix -
 - External repositories, if needed, belong under `<run_dir>/temp/external-repos/`.
 - No finding reaches the report unless it survives verifier review.
 - Every verified finding can be listed with available actions and assigned a persisted decision: `fix`, `accept_risk`, `ignore`, `defer`, or `needs_human`.
+- Every run can emit a post-review audit summary showing what ran, what was found, what was decided, and what was fixed.
 
 ## Development Gate
 

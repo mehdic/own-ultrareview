@@ -115,3 +115,49 @@ def test_decide_records_user_decision_and_actions_reflects_it(tmp_path):
     assert row == ("fix", "Patch before merge.")
     assert actions["open_finding_count"] == 0
     assert actions["findings"][0]["decision"]["decision"] == "fix"
+
+
+def test_resolve_records_fix_outcome_and_summary_explains_run(tmp_path):
+    db_path, finding_id = make_review_with_finding(tmp_path)
+
+    run_cli(
+        "decide",
+        "--db",
+        str(db_path),
+        "--finding-id",
+        finding_id,
+        "--decision",
+        "fix",
+        "--note",
+        "Patch before merge.",
+    )
+    resolution = run_cli(
+        "resolve",
+        "--db",
+        str(db_path),
+        "--finding-id",
+        finding_id,
+        "--status",
+        "fixed",
+        "--summary",
+        "Changed next-step routing so verifier setup happens before judge.",
+        "--evidence",
+        "commit abc123",
+    )
+    summary_payload = run_cli("summary", "--db", str(db_path))
+
+    markdown = Path(summary_payload["markdown_path"]).read_text(encoding="utf-8")
+    summary_json = json.loads(Path(summary_payload["json_path"]).read_text(encoding="utf-8"))
+
+    assert resolution["status"] == "recorded"
+    assert summary_payload["finding_count"] == 1
+    assert summary_json["run"]["id"] == summary_payload["run_id"]
+    assert summary_json["tasks"]["total"] == 1
+    assert summary_json["findings"][0]["decision"]["decision"] == "fix"
+    assert summary_json["findings"][0]["resolution"]["status"] == "fixed"
+    assert summary_json["findings"][0]["resolution"]["summary"] == "Changed next-step routing so verifier setup happens before judge."
+    assert summary_json["findings"][0]["resolution"]["evidence"] == ["commit abc123"]
+    assert "## What Ran" in markdown
+    assert "## What Was Found" in markdown
+    assert "## What Was Decided" in markdown
+    assert "## What Was Fixed" in markdown

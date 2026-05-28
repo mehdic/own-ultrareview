@@ -107,6 +107,18 @@ def init_schema(conn: sqlite3.Connection) -> None:
           updated_at text not null,
           unique(final_finding_id)
         );
+
+        create table if not exists finding_resolutions (
+          id text primary key,
+          run_id text not null references runs(id) on delete cascade,
+          final_finding_id text not null references final_findings(id) on delete cascade,
+          status text not null,
+          summary text not null,
+          evidence_json text not null,
+          created_at text not null,
+          updated_at text not null,
+          unique(final_finding_id)
+        );
         """
     )
     conn.commit()
@@ -367,6 +379,48 @@ def upsert_finding_decision(
         on conflict(final_finding_id) do update set
           decision = excluded.decision,
           note = excluded.note,
+          updated_at = excluded.updated_at
+        """,
+        row,
+    )
+    conn.commit()
+    return row
+
+
+def upsert_finding_resolution(
+    conn: sqlite3.Connection,
+    run_id: str,
+    final_finding_id: str,
+    status: str,
+    summary: str,
+    evidence: list[str],
+) -> dict[str, Any]:
+    now = _now()
+    existing = conn.execute(
+        "select id, created_at from finding_resolutions where final_finding_id = ?",
+        (final_finding_id,),
+    ).fetchone()
+    row = {
+        "id": existing[0] if existing else _id("resolution"),
+        "run_id": run_id,
+        "final_finding_id": final_finding_id,
+        "status": status,
+        "summary": summary,
+        "evidence_json": json.dumps(evidence, sort_keys=True),
+        "created_at": existing[1] if existing else now,
+        "updated_at": now,
+    }
+    conn.execute(
+        """
+        insert into finding_resolutions (
+          id, run_id, final_finding_id, status, summary, evidence_json, created_at, updated_at
+        ) values (
+          :id, :run_id, :final_finding_id, :status, :summary, :evidence_json, :created_at, :updated_at
+        )
+        on conflict(final_finding_id) do update set
+          status = excluded.status,
+          summary = excluded.summary,
+          evidence_json = excluded.evidence_json,
           updated_at = excluded.updated_at
         """,
         row,
