@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "category": {"type": "string"},
+    "claim": {"minLength": 1, "type": "string"},
+    "confidence": {"maximum": 100, "minimum": 0, "type": "integer"},
+    "evidence": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "line": {"minimum": 1, "type": "integer"},
+          "path": {"minLength": 1, "type": "string"},
+          "quote": {"minLength": 1, "type": "string"}
+        },
+        "required": ["path", "line", "quote"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "failure_mode": {"minLength": 1, "type": "string"},
+    "file": {"minLength": 1, "type": "string"},
+    "introduced_by_diff": {"type": "boolean"},
+    "line": {"minimum": 1, "type": "integer"},
+    "severity": {
+      "enum": ["critical", "must_change", "better_to_change", "acceptable"],
+      "type": "string"
+    },
+    "suggested_fix": {"type": "string"},
+    "title": {"minLength": 1, "type": "string"}
+  },
+  "required": [
+    "title",
+    "category",
+    "severity",
+    "confidence",
+    "file",
+    "line",
+    "introduced_by_diff",
+    "claim",
+    "failure_mode",
+    "evidence",
+    "suggested_fix"
+  ],
+  "type": "object"
+}
+

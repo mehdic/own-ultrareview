@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "candidate_id": {"minLength": 1, "type": "string"},
+    "evidence": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "line": {"minimum": 1, "type": "integer"},
+          "path": {"minLength": 1, "type": "string"},
+          "quote": {"minLength": 1, "type": "string"}
+        },
+        "required": ["path", "line", "quote"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "reason": {"minLength": 1, "type": "string"},
+    "verdict": {
+      "enum": ["verified", "rejected", "uncertain"],
+      "type": "string"
+    }
+  },
+  "required": ["candidate_id", "verdict", "reason", "evidence"],
+  "type": "object"
+}
+
