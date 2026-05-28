@@ -101,3 +101,66 @@ def test_cli_next_leases_first_task_after_start(tmp_path):
     assert payload["role"] == "diff_cartographer"
     assert payload["status"] == "running"
     assert Path(payload["packet_path"]).exists()
+
+
+def test_cli_next_points_to_verifier_preparation_after_scouts_find_candidates(tmp_path):
+    repo, base_sha = make_repo(tmp_path)
+    start = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ultrareview.cli",
+            "start",
+            "--repo",
+            str(repo),
+            "--base",
+            base_sha,
+        ],
+        cwd=Path.cwd(),
+        env=cli_env(),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    db_path = json.loads(start.stdout)["db_path"]
+
+    import sqlite3
+    from ultrareview.runtime import db as runtime_db
+
+    conn = sqlite3.connect(db_path)
+    task_id = conn.execute("select id from agent_tasks order by rowid limit 1").fetchone()[0]
+    conn.close()
+    conn = runtime_db.connect(db_path)
+    runtime_db.mark_task_completed(conn, task_id, "outputs/task.json")
+    runtime_db.insert_candidate(
+        conn,
+        json.loads(start.stdout)["run_id"],
+        task_id,
+        {
+            "category": "correctness",
+            "severity": "must_change",
+            "confidence": 90,
+            "file": "app.py",
+            "line": 1,
+            "claim": "The printed value changed.",
+            "failure_mode": "Callers receive the wrong value.",
+            "evidence": [{"path": "app.py", "line": 1, "quote": "print('new')"}],
+        },
+    )
+    for (pending_id,) in conn.execute("select id from agent_tasks where status = 'pending'").fetchall():
+        runtime_db.mark_task_completed(conn, pending_id, f"outputs/{pending_id}.json")
+    conn.close()
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ultrareview.cli", "next", "--db", db_path],
+        cwd=Path.cwd(),
+        env=cli_env(),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+
+    assert payload["status"] == "needs_verification_setup"
+    assert payload["next"] == "own-ultrareview prepare-verifiers --db <db_path>"

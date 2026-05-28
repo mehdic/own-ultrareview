@@ -111,6 +111,28 @@ def command_next(args: argparse.Namespace) -> int:
     run = _first_run(conn)
     task = db.next_task(conn, run["id"])
     if task is None:
+        candidates_without_verifiers = conn.execute(
+            """
+            select count(*) from candidates c
+            where c.run_id = ?
+              and not exists (
+                select 1 from agent_tasks t
+                where t.run_id = c.run_id
+                  and t.phase = 'verification'
+                  and t.input_path like '%' || c.id || '%'
+              )
+            """,
+            (run["id"],),
+        ).fetchone()[0]
+        if candidates_without_verifiers:
+            _print(
+                {
+                    "run_id": run["id"],
+                    "status": "needs_verification_setup",
+                    "next": "own-ultrareview prepare-verifiers --db <db_path>",
+                }
+            )
+            return 0
         _print({"run_id": run["id"], "status": "complete", "next": "own-ultrareview judge --db <db_path>"})
         return 0
     db.mark_task_running(conn, task["id"])

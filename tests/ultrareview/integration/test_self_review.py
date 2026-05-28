@@ -96,7 +96,7 @@ def test_ultrareview_can_review_its_own_runtime_with_simulated_llm(tmp_path):
 
     while True:
         leased = cli("next", "--db", db_path)
-        if leased["status"] == "complete":
+        if leased["status"] in {"complete", "needs_verification_setup"}:
             break
         packet = json.loads(Path(str(leased["packet_path"])).read_text(encoding="utf-8"))
         output = run_dir / "outputs" / f"{leased['task_id']}.json"

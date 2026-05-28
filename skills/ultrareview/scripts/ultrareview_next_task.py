@@ -32,6 +32,31 @@ def main() -> int:
 
     task = db.next_task(conn, run["id"])
     if task is None:
+        candidates_without_verifiers = conn.execute(
+            """
+            select count(*) from candidates c
+            where c.run_id = ?
+              and not exists (
+                select 1 from agent_tasks t
+                where t.run_id = c.run_id
+                  and t.phase = 'verification'
+                  and t.input_path like '%' || c.id || '%'
+              )
+            """,
+            (run["id"],),
+        ).fetchone()[0]
+        if candidates_without_verifiers:
+            print(
+                json.dumps(
+                    {
+                        "run_id": run["id"],
+                        "status": "needs_verification_setup",
+                        "next": "run ultrareview_prepare_verifiers.py",
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 0
         print(json.dumps({"run_id": run["id"], "status": "complete", "next": "run ultrareview_judge.py"}, sort_keys=True))
         return 0
 
