@@ -77,6 +77,13 @@ def test_claude_code_slash_command_uses_my_ultrareview_name():
     assert "/own-ultrareview origin/main" not in claude_doc
 
 
+def test_platform_builder_excludes_autoresearch_local_logs():
+    build_script = Path("scripts/build_platform_packages.sh").read_text(encoding="utf-8")
+
+    assert "--exclude results.tsv" in build_script
+    assert "--exclude run.log" in build_script
+
+
 def test_scout_candidate_schema_is_consistent_across_prompts_and_packets():
     packet_source = Path("src/ultrareview/runtime/packets.py").read_text(encoding="utf-8")
     scout_prompt = Path("skills/ultrareview/prompts/scout-system.md").read_text(encoding="utf-8")

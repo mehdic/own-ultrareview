@@ -26,6 +26,8 @@ rsync_excludes=(
   --exclude .ultrareview
   --exclude __pycache__
   --exclude '*.pyc'
+  --exclude results.tsv
+  --exclude run.log
   --exclude src/own_ultrareview.egg-info
 )
 
