@@ -131,6 +131,24 @@ def test_actions_refuses_when_report_json_is_stale(tmp_path):
     assert "run own-ultrareview report before actions" in result.stderr
 
 
+def test_actions_refuses_when_report_json_is_invalid(tmp_path):
+    db_path, finding_id = make_review_with_finding(tmp_path)
+    (db_path.parent / "final-report.json").write_text("{not json", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ultrareview.cli", "actions", "--db", str(db_path)],
+        cwd=Path.cwd(),
+        env=cli_env(),
+        text=True,
+        capture_output=True,
+    )
+
+    assert finding_id
+    assert result.returncode != 0
+    assert "JSON decision report is missing or invalid" in result.stderr
+    assert "run own-ultrareview report before actions" in result.stderr
+
+
 def test_actions_refuses_while_verifier_task_is_pending(tmp_path):
     db_path, finding_id = make_review_with_finding(tmp_path)
     conn = db.connect(db_path)
