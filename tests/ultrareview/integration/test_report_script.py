@@ -63,9 +63,19 @@ def test_report_script_writes_markdown_and_json(tmp_path):
     payload = json.loads(result.stdout)
     markdown = Path(payload["markdown_path"]).read_text(encoding="utf-8")
     report_json = json.loads(Path(payload["json_path"]).read_text(encoding="utf-8"))
+    html = Path(payload["html_path"]).read_text(encoding="utf-8")
 
     assert payload["finding_count"] == 1
     assert "# UltraReview Report" in markdown
+    assert "<h1>UltraReview Report</h1>" in html
+    assert "Decision Checklist" in html
+    assert 'class="severity-badge severity-must-change"' in html
+    assert 'class="criticality criticality-must-change"' in html
+    assert 'class="risk-matrix table-wrap"' in html
+    assert 'class="fix-group"' in html
+    assert "overflow-x: auto" in html
+    assert "word-break: break-word" in html
+    assert "max-width: 100%" in html
     assert "MUST_CHANGE" in markdown
     assert "app.py:12" in markdown
     assert "Finding ID" in markdown
@@ -73,6 +83,12 @@ def test_report_script_writes_markdown_and_json(tmp_path):
     assert report_json["findings"][0]["id"]
     assert report_json["findings"][0]["available_actions"] == ["fix", "accept_risk", "ignore", "defer", "needs_human"]
     assert report_json["findings"][0]["claim"] == "The invoice tenant is not checked."
+    assert report_json["findings"][0]["recommended_action"] == "fix_before_merge"
+    assert report_json["findings"][0]["suggested_fix"] == "Review and decide from fix group."
+    assert report_json["findings"][0]["fix_group"] == "security: app.py"
+    assert report_json["findings"][0]["risk_if_not_fixed"] == "A user can view another tenant's invoice."
+    assert report_json["findings"][0]["effort"].startswith("M - ")
+    assert report_json["findings"][0]["risk_of_fix"] == "Medium: verify related behavior with targeted tests before merging."
 
 
 def test_report_script_handles_no_verified_findings(tmp_path):
@@ -94,7 +110,9 @@ def test_report_script_handles_no_verified_findings(tmp_path):
     payload = json.loads(result.stdout)
     markdown = Path(payload["markdown_path"]).read_text(encoding="utf-8")
     report_json = json.loads(Path(payload["json_path"]).read_text(encoding="utf-8"))
+    html = Path(payload["html_path"]).read_text(encoding="utf-8")
 
     assert payload["finding_count"] == 0
     assert "No verified findings." in markdown
+    assert "No verified findings." in html
     assert report_json["findings"] == []

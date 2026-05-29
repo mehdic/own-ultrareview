@@ -71,10 +71,35 @@ def main() -> int:
                 "Look for code paths, guards, tests, or constraints that invalidate the claim.",
                 "Return verified only when the failure mode is concrete and diff-related.",
                 "Return rejected for false positives. Return uncertain when evidence is insufficient.",
+                "Return JSON that satisfies the verifier_output_schema on the first attempt.",
+                "Every verification must include candidate_id, verdict, reason, and a non-empty evidence array.",
+                "Every evidence item must include repo-relative path, positive integer line, and exact quote.",
             ],
             "verdict_contract": {
                 "allowed": ["verified", "rejected", "uncertain"],
                 "required_fields": ["candidate_id", "verdict", "reason", "evidence"],
+                "required_evidence_fields": ["path", "line", "quote"],
+                "reason": "Non-empty explanation of why the verifier verdict is correct.",
+                "evidence": "Non-empty array of local code/config/test evidence supporting the verifier verdict.",
+            },
+            "verifier_output_schema": {
+                "top_level_key": "verifications",
+                "example": {
+                    "verifications": [
+                        {
+                            "candidate_id": candidate["id"],
+                            "verdict": "verified",
+                            "reason": "The cited code path still reaches the failure mode introduced by the diff.",
+                            "evidence": [
+                                {
+                                    "path": candidate["file_path"],
+                                    "line": candidate["line"],
+                                    "quote": "<exact quote from the local file>",
+                                }
+                            ],
+                        }
+                    ]
+                },
             },
         }
         packet_path.parent.mkdir(parents=True, exist_ok=True)

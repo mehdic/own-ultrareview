@@ -20,16 +20,18 @@ The workflow must use `git` commands only. Do not require `gh`, GitHub API acces
 
 ## Runtime
 
-Installed OpenClaw runtime:
+Runtime source location depends on the platform package:
 
 ```text
-/Users/mehdichaouachi/.openclaw/workspace-roque/projects/own-ultrareview
+VS Code package: <repo>/.github/tools/ultrareview
+Claude Code package: <repo>/tools/ultrareview
+OpenClaw development checkout: the local own-ultrareview project directory
 ```
 
-Preferred command inside OpenClaw:
+Preferred command after runtime installation:
 
 ```bash
-/Users/mehdichaouachi/.openclaw/bin/own-ultrareview
+own-ultrareview
 ```
 
 Run state lives under:
@@ -49,13 +51,13 @@ Each run contains:
 
 ## First Commands
 
-When this skill is loaded from OpenClaw, use the installed CLI above. The `python skills/...` commands are for development from inside this project repository.
+When this skill is loaded from a platform package, use that package's explicit venv command. The `python skills/...` commands are for development from inside this project repository.
 
-OpenClaw quick start:
+Generic quick start:
 
 ```bash
-/Users/mehdichaouachi/.openclaw/bin/own-ultrareview start --repo "$PWD" --base origin/main --head HEAD
-/Users/mehdichaouachi/.openclaw/bin/own-ultrareview next --db <run_dir>/review.sqlite
+own-ultrareview start --repo "$PWD" --base origin/main --head HEAD
+own-ultrareview next --db <run_dir>/review.sqlite
 ```
 
 Initialize:
@@ -105,10 +107,10 @@ python skills/ultrareview/scripts/ultrareview_report.py --db <run_dir>/review.sq
 List verified issues and record the user's decision:
 
 ```bash
-/Users/mehdichaouachi/.openclaw/bin/own-ultrareview actions --db <run_dir>/review.sqlite
-/Users/mehdichaouachi/.openclaw/bin/own-ultrareview decide --db <run_dir>/review.sqlite --finding-id <finding_id> --decision fix --note "Patch before merge."
-/Users/mehdichaouachi/.openclaw/bin/own-ultrareview resolve --db <run_dir>/review.sqlite --finding-id <finding_id> --status fixed --summary "Patched before merge." --evidence "commit abc123"
-/Users/mehdichaouachi/.openclaw/bin/own-ultrareview summary --db <run_dir>/review.sqlite
+own-ultrareview actions --db <run_dir>/review.sqlite
+own-ultrareview decide --db <run_dir>/review.sqlite --finding-id <finding_id> --decision fix --note "Patch before merge."
+own-ultrareview resolve --db <run_dir>/review.sqlite --finding-id <finding_id> --status fixed --summary "Patched before merge." --evidence "commit abc123"
+own-ultrareview summary --db <run_dir>/review.sqlite
 ```
 
 ## Agent Sequence
@@ -157,7 +159,46 @@ After verified findings are produced, show the user all findings and all decisio
 - `defer`: valid issue but intentionally moved to later work.
 - `needs_human`: requires product/security/domain owner decision.
 
-After the user chooses decisions, implement all selected fixes together. Then record each resolution and emit the summary. The summary must tell the user exactly:
+The decision presentation must be actionable. Do not show an empty or vague `Action?` column. Every row must include:
+
+- recommended action: `fix_before_merge`, `accept_risk`, `defer`, `needs_human`, or `ignore_duplicate`;
+- suggested fix: a concrete engineering change;
+- fix group: shared root cause for deduplication;
+- risk if not fixed;
+- risk of the fix;
+- effort: `S`, `M`, `L`, or `XL` with a reason.
+
+After the findings table, include consolidated fix groups with proposed patch, risk if not fixed, risk of patch, effort, verification, and rollback notes.
+
+Before asking the user for decisions, create a self-contained HTML report at:
+
+```text
+<run_dir>/reports/ultrareview-report.html
+```
+
+The report must be readable by opening the file directly in a browser and must include executive summary, risk matrix, decision table, consolidated fix groups, finding detail, verification plan, and decision checklist. It must explain each issue's risk, how the fix would work, the risk of the fix, likely impact, verification commands, and rollback plan. Provide the report path/link before the chat decision table so the user can inspect the richer report first.
+
+Do not show any issues breakdown, findings table, action table, or fix-group summary until `actions` returns `decision_gate_complete: true` and an `html_path`. The first human-visible line of the decision message must be `HTML report: <html_path>`.
+
+After the user chooses decisions, do not implement selected fixes directly. Any user request to fix one issue, multiple issues, a fix group, or all issues means selected scope for an implementation plan only; it is not approval to edit. If any finding or fix group is selected for `fix` / `fix_before_merge`, first create an implementation plan in both Markdown and HTML:
+
+```text
+<run_dir>/plans/ultrareview-implementation-plan.md
+<run_dir>/plans/ultrareview-implementation-plan.html
+```
+
+The plan must cover scope, grouped findings, root causes, proposed technical approach, alternatives considered, ordered implementation steps, new/updated tests, exact verification commands, security considerations, operational/release risk, rollback plan, and acceptance criteria. Base the plan on Google Engineering Practices for small reviewable changes, NIST SSDF SP 800-218 for secure SDLC/vulnerability mitigation, and OWASP secure coding/code review guidance for security-sensitive fixes.
+
+Present both plan paths to the user:
+
+```text
+Implementation plan MD: <run_dir>/plans/ultrareview-implementation-plan.md
+Implementation plan HTML: <run_dir>/plans/ultrareview-implementation-plan.html
+```
+
+Wait for explicit approval before editing source code. Do not edit source files, use edit/write tools, or run apply_patch before both implementation plan files exist and the user has explicitly approved the plan after seeing both paths. Only after the user approves the implementation plan should you implement selected fixes together, record each resolution, and emit the summary.
+
+The summary must tell the user exactly:
 
 - which tasks/agents ran and their statuses,
 - what each agent found,

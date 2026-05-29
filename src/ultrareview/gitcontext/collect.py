@@ -9,12 +9,34 @@ def _git(repo: Path, *args: str) -> str:
     return subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
 
 
+def _normalize_numstat_path(path: str) -> str:
+    """Return the destination path for git numstat rename notation."""
+    if " => " not in path:
+        return path
+
+    if "{" not in path:
+        return path.rsplit(" => ", 1)[1]
+
+    normalized = path
+    while "{" in normalized and "}" in normalized:
+        before, _, remainder = normalized.partition("{")
+        rename, separator, after = remainder.partition("}")
+        if not separator:
+            break
+        if " => " not in rename:
+            normalized = before + rename + after
+            continue
+        _, destination = rename.rsplit(" => ", 1)
+        normalized = before + destination + after
+    return normalized
+
+
 def _numstat(repo: Path, base_ref: str, head_ref: str) -> dict[str, tuple[int, int]]:
     output = _git(repo, "diff", "--numstat", f"{base_ref}..{head_ref}")
     stats: dict[str, tuple[int, int]] = {}
     for line in output.splitlines():
         additions, deletions, path = line.split("\t", 2)
-        stats[path] = (
+        stats[_normalize_numstat_path(path)] = (
             0 if additions == "-" else int(additions),
             0 if deletions == "-" else int(deletions),
         )

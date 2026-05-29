@@ -68,6 +68,139 @@ def test_cli_record_output_rejects_invalid_candidate_and_marks_task_failed(tmp_p
     assert "missing required field" in row[1]
 
 
+def test_cli_record_output_rejects_missing_candidates_key_and_allows_repair(tmp_path):
+    db_path, task_id = create_running_scout(tmp_path)
+    bad_output = tmp_path / "bad-output.json"
+    bad_output.write_text(json.dumps({"findings": []}), encoding="utf-8")
+
+    bad_result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ultrareview.cli",
+            "record-output",
+            "--db",
+            str(db_path),
+            "--task-id",
+            task_id,
+            "--output",
+            str(bad_output),
+        ],
+        cwd=Path.cwd(),
+        env=cli_env(),
+        text=True,
+        capture_output=True,
+    )
+
+    conn = sqlite3.connect(db_path)
+    failed_row = conn.execute("select status, error from agent_tasks where id = ?", (task_id,)).fetchone()
+    candidate_count = conn.execute("select count(*) from candidates where source_task_id = ?", (task_id,)).fetchone()[0]
+    conn.close()
+
+    assert bad_result.returncode != 0
+    assert failed_row[0] == "failed"
+    assert "missing required top-level 'candidates'" in failed_row[1]
+    assert candidate_count == 0
+
+    good_output = tmp_path / "good-output.json"
+    good_output.write_text(
+        json.dumps(
+            {
+                "candidates": [
+                    {
+                        "title": "Bug",
+                        "category": "correctness",
+                        "severity": "must_change",
+                        "confidence": 80,
+                        "file": "app.py",
+                        "line": 1,
+                        "introduced_by_diff": "The diff changed the function output.",
+                        "claim": "The value is wrong.",
+                        "failure_mode": "The caller receives an invalid value.",
+                        "evidence": [{"path": "app.py", "line": 1, "quote": "return 0"}],
+                        "suggested_fix": "Return the expected value.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    repaired = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ultrareview.cli",
+            "record-output",
+            "--db",
+            str(db_path),
+            "--task-id",
+            task_id,
+            "--output",
+            str(good_output),
+        ],
+        cwd=Path.cwd(),
+        env=cli_env(),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    conn = sqlite3.connect(db_path)
+    repaired_row = conn.execute("select status, error from agent_tasks where id = ?", (task_id,)).fetchone()
+    candidate_count = conn.execute("select count(*) from candidates where source_task_id = ?", (task_id,)).fetchone()[0]
+    conn.close()
+
+    assert json.loads(repaired.stdout)["inserted_candidates"] == 1
+    assert repaired_row == ("completed", None)
+    assert candidate_count == 1
+
+
+def test_cli_record_output_malformed_json_marks_task_failed_and_blocks_next(tmp_path):
+    db_path, task_id = create_running_scout(tmp_path)
+    bad_output = tmp_path / "bad-output.json"
+    bad_output.write_text("{not-json", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ultrareview.cli",
+            "record-output",
+            "--db",
+            str(db_path),
+            "--task-id",
+            task_id,
+            "--output",
+            str(bad_output),
+        ],
+        cwd=Path.cwd(),
+        env=cli_env(),
+        text=True,
+        capture_output=True,
+    )
+    next_result = subprocess.run(
+        [sys.executable, "-m", "ultrareview.cli", "next", "--db", str(db_path)],
+        cwd=Path.cwd(),
+        env=cli_env(),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute("select status, error from agent_tasks where id = ?", (task_id,)).fetchone()
+    conn.close()
+
+    assert result.returncode != 0
+    assert row[0] == "failed"
+    assert "output JSON invalid" in row[1]
+    payload = json.loads(next_result.stdout)
+    assert payload["status"] == "invalid_state"
+    assert payload["task_id"] == task_id
+    assert "record-output" in payload["next"]
+
+
 def test_cli_prepare_verifiers_is_idempotent(tmp_path):
     db_path, task_id = create_running_scout(tmp_path)
     output = tmp_path / "good-output.json"

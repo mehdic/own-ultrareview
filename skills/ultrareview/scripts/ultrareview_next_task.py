@@ -30,6 +30,37 @@ def main() -> int:
     if run is None:
         raise SystemExit(f"no run found in {db_path}")
 
+    blocked = conn.execute(
+        """
+        select * from agent_tasks
+        where run_id = ?
+          and status in ('running', 'failed')
+        order by created_at, rowid
+        limit 1
+        """,
+        (run["id"],),
+    ).fetchone()
+    if blocked is not None:
+        next_script = "ultrareview_record_verification.py" if blocked["phase"] == "verification" else "ultrareview_record_output.py"
+        print(
+            json.dumps(
+                {
+                    "run_id": run["id"],
+                    "status": "invalid_state",
+                    "task_id": blocked["id"],
+                    "role": blocked["role"],
+                    "phase": blocked["phase"],
+                    "task_status": blocked["status"],
+                    "error": blocked["error"],
+                    "packet_path": str(run_dir / blocked["input_path"]),
+                    "next": f"run {next_script}",
+                    "rule": "A running or failed task must be completed with corrected output before the run can advance.",
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+
     task = db.next_task(conn, run["id"])
     if task is None:
         candidates_without_verifiers = conn.execute(

@@ -5,6 +5,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from json import JSONDecodeError
 from pathlib import Path
 
 
@@ -27,11 +28,6 @@ def main() -> int:
     args = parse_args()
     db_path = Path(args.db).expanduser().resolve()
     output_path = Path(args.output).expanduser().resolve()
-    payload = json.loads(output_path.read_text(encoding="utf-8"))
-    candidates = payload.get("candidates", [])
-    if not isinstance(candidates, list):
-        raise SystemExit("output field 'candidates' must be a list")
-
     conn = db.connect(db_path)
     conn.row_factory = sqlite3.Row
     task = conn.execute("select * from agent_tasks where id = ?", (args.task_id,)).fetchone()
@@ -39,6 +35,25 @@ def main() -> int:
         raise SystemExit(f"unknown task id: {args.task_id}")
     if task["phase"] != "scouting":
         raise SystemExit("record-output only accepts scouting tasks; use ultrareview_record_verification.py for verification tasks")
+
+    try:
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        db.mark_task_failed(conn, args.task_id, f"output file not found: {output_path}")
+        raise SystemExit(f"output file not found: {output_path}") from exc
+    except JSONDecodeError as exc:
+        db.mark_task_failed(conn, args.task_id, f"output JSON invalid: {exc.msg}")
+        raise SystemExit(f"output JSON invalid: {exc.msg}") from exc
+    if not isinstance(payload, dict):
+        db.mark_task_failed(conn, args.task_id, "output JSON must be an object")
+        raise SystemExit("output JSON must be an object")
+    if "candidates" not in payload:
+        db.mark_task_failed(conn, args.task_id, "output missing required top-level 'candidates' array")
+        raise SystemExit("output missing required top-level 'candidates' array")
+    candidates = payload["candidates"]
+    if not isinstance(candidates, list):
+        db.mark_task_failed(conn, args.task_id, "output field 'candidates' must be a list")
+        raise SystemExit("output field 'candidates' must be a list")
 
     for index, candidate in enumerate(candidates):
         result = validate_candidate(candidate)

@@ -117,3 +117,4 @@ def test_full_cli_chain_from_start_to_report(tmp_path):
     assert judged["final_finding_count"] == 1
     assert report["finding_count"] == 1
     assert Path(str(report["markdown_path"])).exists()
+    assert Path(str(report["html_path"])).exists()

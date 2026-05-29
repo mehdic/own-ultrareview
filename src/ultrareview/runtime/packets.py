@@ -85,6 +85,9 @@ def _packet_for(
                 "Report only issues introduced or exposed by the diff.",
                 "Prefer no finding over speculative noise.",
                 "Every candidate must include file, line, failure mode, and evidence.",
+                "Return top-level JSON object with exactly the `candidates` array; do not use `findings`.",
+                "confidence must be an integer from 0 to 100, never a string.",
+                "evidence must be a non-empty array of objects with path, positive integer line, and exact quote.",
                 "introduced_by_diff must explain why the diff introduced or exposed the issue.",
                 "suggested_fix must explain the concrete remediation.",
             ],
@@ -106,6 +109,35 @@ def _packet_for(
                 "evidence",
                 "suggested_fix",
             ],
+            "field_contract": {
+                "confidence": "Integer from 0 to 100, for example 91.",
+                "evidence": "Non-empty array of objects; every object must include repo-relative path, positive integer line, and exact quote.",
+                "introduced_by_diff": "Non-empty string explaining why the diff introduced or exposed the issue.",
+                "suggested_fix": "Non-empty string with the concrete remediation.",
+            },
+            "example": {
+                "candidates": [
+                    {
+                        "title": "Tenant guard compares user to itself",
+                        "category": "security",
+                        "severity": "must_change",
+                        "confidence": 91,
+                        "file": "app.py",
+                        "line": 12,
+                        "introduced_by_diff": "The diff changed the tenant guard to compare the user company to itself.",
+                        "claim": "The invoice tenant is not checked.",
+                        "failure_mode": "A user can view another tenant's invoice.",
+                        "evidence": [
+                            {
+                                "path": "app.py",
+                                "line": 12,
+                                "quote": "user.company_id == user.company_id",
+                            }
+                        ],
+                        "suggested_fix": "Compare user.company_id to invoice.company_id.",
+                    }
+                ]
+            },
         },
     }
 

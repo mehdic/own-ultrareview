@@ -41,6 +41,9 @@ def setup_candidate_and_verifier(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         "verification",
         f"packets/verify-{candidate['id']}.json",
     )
+    packet_path = db_path.parent / verifier["input_path"]
+    packet_path.parent.mkdir(parents=True, exist_ok=True)
+    packet_path.write_text(json.dumps({"candidate": {"id": candidate["id"]}}), encoding="utf-8")
     db.mark_task_running(conn, verifier["id"])
     conn.close()
     return db_path, {"run_id": run["id"], "candidate_id": candidate["id"], "task_id": verifier["id"]}
@@ -134,7 +137,7 @@ def test_record_verification_and_judge_promotes_verified_candidate(tmp_path):
     report = json.loads(finding_row[2])
 
     assert recorded["inserted_verifications"] == 1
-    assert recorded["next"] == "run ultrareview_judge.py"
+    assert recorded["next"] == "run ultrareview_next_task.py"
     assert judged["final_finding_count"] == 1
     assert judged["next"] == "run ultrareview_report.py"
     assert verification_row == (

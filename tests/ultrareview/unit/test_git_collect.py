@@ -98,6 +98,35 @@ def test_collect_git_context_uses_merge_base_for_review_diff(tmp_path):
     assert "base_only.py" not in context["diff"]
 
 
+def test_collect_git_context_preserves_rename_diff_stats(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run(repo, "init")
+    run(repo, "config", "user.email", "test@example.com")
+    run(repo, "config", "user.name", "Test User")
+    (repo / "old.py").write_text(
+        "alpha\nbeta\ngamma\ndelta\nepsilon\n",
+        encoding="utf-8",
+    )
+    run(repo, "add", "old.py")
+    run(repo, "commit", "-m", "base")
+    base_sha = run(repo, "rev-parse", "HEAD")
+
+    run(repo, "mv", "old.py", "new.py")
+    (repo / "new.py").write_text(
+        "alpha\nbeta changed\ngamma\ndelta\nepsilon\nzeta\n",
+        encoding="utf-8",
+    )
+    run(repo, "add", "new.py")
+    run(repo, "commit", "-m", "rename and change")
+
+    context = collect_git_context(repo, base_sha, "HEAD")
+
+    assert context["changed_files"] == [
+        {"path": "new.py", "status": "R059", "additions": 2, "deletions": 1}
+    ]
+
+
 def test_collect_git_context_skips_symlinked_instruction_files(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()

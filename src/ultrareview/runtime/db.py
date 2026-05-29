@@ -384,6 +384,36 @@ def insert_verification(
     return row
 
 
+def verification_rows_match_output(
+    conn: sqlite3.Connection,
+    verifier_task_id: str,
+    verifications: list[dict[str, Any]],
+) -> bool:
+    cursor = conn.execute(
+        """
+        select candidate_id, verdict, evidence_json, reason
+        from verifications
+        where verifier_task_id = ?
+        order by created_at, rowid
+        """,
+        (verifier_task_id,),
+    )
+    rows = [_row_to_dict(cursor, row) for row in cursor.fetchall()]
+    if len(rows) != len(verifications):
+        return False
+
+    for row, verification in zip(rows, verifications):
+        if row["candidate_id"] != verification["candidate_id"]:
+            return False
+        if row["verdict"] != verification["verdict"]:
+            return False
+        if row["reason"] != verification["reason"]:
+            return False
+        if json.loads(row["evidence_json"]) != verification["evidence"]:
+            return False
+    return True
+
+
 def insert_final_finding(
     conn: sqlite3.Connection,
     run_id: str,

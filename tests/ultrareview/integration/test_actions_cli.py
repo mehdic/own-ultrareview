@@ -22,6 +22,7 @@ def make_review_with_finding(tmp_path: Path) -> tuple[Path, str]:
     db.init_schema(conn)
     run = db.create_run(conn, str(tmp_path / "repo"), "origin/main", "HEAD", "copilot-git-only")
     scout = db.create_task(conn, run["id"], "correctness_reviewer", "scouting", "packet.json")
+    db.mark_task_completed(conn, scout["id"], "outputs/scout.json")
     candidate = db.insert_candidate(
         conn,
         run["id"],
@@ -39,6 +40,20 @@ def make_review_with_finding(tmp_path: Path) -> tuple[Path, str]:
             "suggested_fix": "Route the next command to prepare-verifiers before judge.",
         },
     )
+    verifier = db.create_task(conn, run["id"], "verifier_agent", "verification", f"packets/verify-{candidate['id']}.json")
+    db.insert_verification(
+        conn,
+        run["id"],
+        candidate["id"],
+        verifier["id"],
+        {
+            "candidate_id": candidate["id"],
+            "verdict": "verified",
+            "reason": "The next command points to judge.",
+            "evidence": [{"path": "src/ultrareview/cli.py", "line": 114, "quote": "judge"}],
+        },
+    )
+    db.mark_task_completed(conn, verifier["id"], "outputs/verifier.json")
     finding = db.insert_final_finding(
         conn,
         run["id"],
@@ -60,6 +75,7 @@ def make_review_with_finding(tmp_path: Path) -> tuple[Path, str]:
         },
     )
     conn.close()
+    run_cli("report", "--db", str(db_path))
     return db_path, finding["id"]
 
 
@@ -75,16 +91,70 @@ def run_cli(*args: str) -> dict[str, object]:
     return json.loads(result.stdout)
 
 
+def test_actions_refuses_before_report_exists(tmp_path):
+    db_path, finding_id = make_review_with_finding(tmp_path)
+    html_path = db_path.parent / "reports" / "ultrareview-report.html"
+    html_path.unlink()
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ultrareview.cli", "actions", "--db", str(db_path)],
+        cwd=Path.cwd(),
+        env=cli_env(),
+        text=True,
+        capture_output=True,
+    )
+
+    assert finding_id
+    assert result.returncode != 0
+    assert "HTML decision report is missing" in result.stderr
+    assert "run own-ultrareview report before actions" in result.stderr
+
+
+def test_actions_refuses_while_verifier_task_is_pending(tmp_path):
+    db_path, finding_id = make_review_with_finding(tmp_path)
+    conn = db.connect(db_path)
+    run_id = conn.execute("select id from runs order by created_at limit 1").fetchone()[0]
+    db.create_task(conn, run_id, "verifier_agent", "verification", "packets/verify-extra.json")
+    conn.close()
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ultrareview.cli", "actions", "--db", str(db_path)],
+        cwd=Path.cwd(),
+        env=cli_env(),
+        text=True,
+        capture_output=True,
+    )
+
+    assert finding_id
+    assert result.returncode != 0
+    assert "cannot present decisions before the review decision gate is complete" in result.stderr
+    assert "verification:pending" in result.stderr
+
+
 def test_actions_lists_findings_and_available_decisions(tmp_path):
     db_path, finding_id = make_review_with_finding(tmp_path)
 
     payload = run_cli("actions", "--db", str(db_path))
 
     assert payload["open_finding_count"] == 1
+    assert payload["decision_gate_complete"] is True
+    assert Path(str(payload["html_path"])).exists()
+    assert payload["html_path"].endswith("reports/ultrareview-report.html")
+    assert payload["instruction"] == "Present html_path before any chat findings table or decision request."
+    html = Path(str(payload["html_path"])).read_text(encoding="utf-8")
+    assert 'class="severity-badge severity-must-change"' in html
+    assert 'class="criticality criticality-must-change"' in html
+    assert 'class="risk-matrix table-wrap"' in html
+    assert "overflow-x: auto" in html
+    assert "word-break: break-word" in html
     assert payload["findings"][0]["id"] == finding_id
     assert payload["findings"][0]["claim"] == "The CLI skips verifier setup."
     assert payload["findings"][0]["introduced_by_diff"] == "The changed next-step routing skipped verifier preparation."
     assert payload["findings"][0]["suggested_fix"] == "Route the next command to prepare-verifiers before judge."
+    assert payload["findings"][0]["recommended_action"] == "fix_before_merge"
+    assert payload["findings"][0]["fix_group"] == "correctness: src/ultrareview/cli.py"
+    assert payload["findings"][0]["risk_if_not_fixed"] == "Findings are never verified."
+    assert payload["findings"][0]["risk_of_fix"] == "Medium: verify related behavior with targeted tests before merging."
     assert payload["findings"][0]["decision_question"] == "How should UltraReview handle this finding?"
     assert payload["findings"][0]["decision_options"] == [
         {"value": "fix", "label": "Fix before merge"},
@@ -188,7 +258,7 @@ def test_resolve_records_fix_outcome_and_summary_explains_run(tmp_path):
     assert resolution["status"] == "recorded"
     assert summary_payload["finding_count"] == 1
     assert summary_json["run"]["id"] == summary_payload["run_id"]
-    assert summary_json["tasks"]["total"] == 1
+    assert summary_json["tasks"]["total"] == 2
     assert summary_json["findings"][0]["decision"]["decision"] == "fix"
     assert summary_json["findings"][0]["resolution"]["status"] == "fixed"
     assert summary_json["findings"][0]["resolution"]["summary"] == "Changed next-step routing so verifier setup happens before judge."
