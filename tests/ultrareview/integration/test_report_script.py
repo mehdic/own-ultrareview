@@ -139,3 +139,63 @@ def test_report_html_is_self_contained_without_external_assets(tmp_path):
     assert "http://" not in html
     assert "<link" not in html.lower()
     assert "<script" not in html.lower()
+
+
+def test_report_default_recommended_actions_match_decision_contract(tmp_path):
+    db_path = tmp_path / "run" / "review.sqlite"
+    conn = db.connect(db_path)
+    db.init_schema(conn)
+    run = db.create_run(conn, str(tmp_path / "repo"), "origin/main", "HEAD", "copilot-git-only")
+    scout = db.create_task(conn, run["id"], "correctness_reviewer", "scouting", "packets/scout.json")
+    for severity in ("critical", "must_change", "better_to_change", "acceptable"):
+        candidate = db.insert_candidate(
+            conn,
+            run["id"],
+            scout["id"],
+            {
+                "category": "correctness",
+                "severity": severity,
+                "confidence": 80,
+                "file": f"{severity}.py",
+                "line": 1,
+                "claim": f"{severity} claim",
+                "failure_mode": f"{severity} failure",
+                "evidence": [{"path": f"{severity}.py", "line": 1, "quote": "return 0"}],
+            },
+        )
+        db.insert_final_finding(
+            conn,
+            run["id"],
+            candidate["id"],
+            {
+                "final_severity": severity,
+                "confidence": 80,
+                "report": {
+                    "file": f"{severity}.py",
+                    "line": 1,
+                    "severity": severity,
+                    "claim": f"{severity} claim",
+                    "failure_mode": f"{severity} failure",
+                    "verification_verdict": "verified",
+                    "verification_reason": "Verified.",
+                },
+            },
+        )
+    conn.close()
+
+    result = subprocess.run(
+        [sys.executable, str(Path("skills/ultrareview/scripts/ultrareview_report.py").resolve()), "--db", str(db_path)],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    report_json = json.loads(Path(json.loads(result.stdout)["json_path"]).read_text(encoding="utf-8"))
+    actions_by_severity = {finding["severity"]: finding["recommended_action"] for finding in report_json["findings"]}
+
+    assert actions_by_severity == {
+        "critical": "fix_before_merge",
+        "must_change": "fix_before_merge",
+        "better_to_change": "defer",
+        "acceptable": "accept_risk",
+    }
