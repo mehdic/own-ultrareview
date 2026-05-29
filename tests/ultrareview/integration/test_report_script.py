@@ -116,3 +116,26 @@ def test_report_script_handles_no_verified_findings(tmp_path):
     assert "No verified findings." in markdown
     assert "No verified findings." in html
     assert report_json["findings"] == []
+
+
+def test_report_html_is_self_contained_without_external_assets(tmp_path):
+    db_path = tmp_path / "run" / "review.sqlite"
+    conn = db.connect(db_path)
+    db.init_schema(conn)
+    db.create_run(conn, str(tmp_path / "repo"), "origin/main", "HEAD", "copilot-git-only")
+    conn.close()
+
+    script = Path("skills/ultrareview/scripts/ultrareview_report.py").resolve()
+    result = subprocess.run(
+        [sys.executable, str(script), "--db", str(db_path)],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    html = Path(json.loads(result.stdout)["html_path"]).read_text(encoding="utf-8")
+
+    assert "https://" not in html
+    assert "http://" not in html
+    assert "<link" not in html.lower()
+    assert "<script" not in html.lower()
