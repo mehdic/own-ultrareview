@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from ultrareview.gitcontext.collect import collect_git_context
+from ultrareview.gitcontext.collect import _normalize_numstat_path, collect_git_context
 
 
 def run(repo: Path, *args: str) -> str:
@@ -125,6 +125,12 @@ def test_collect_git_context_preserves_rename_diff_stats(tmp_path):
     assert context["changed_files"] == [
         {"path": "new.py", "status": "R059", "additions": 2, "deletions": 1}
     ]
+
+
+def test_normalize_numstat_path_handles_git_rename_notation():
+    assert _normalize_numstat_path("old.py => new.py") == "new.py"
+    assert _normalize_numstat_path("src/{old_name.py => new_name.py}") == "src/new_name.py"
+    assert _normalize_numstat_path("src/{old => new}/module.py") == "src/new/module.py"
 
 
 def test_collect_git_context_skips_symlinked_instruction_files(tmp_path):
