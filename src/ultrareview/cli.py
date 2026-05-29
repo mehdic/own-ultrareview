@@ -243,11 +243,12 @@ def _init_run(repo: Path, base: str, head: str, mode: str, runs_root: Path | Non
     return {"run_id": run["id"], "run_dir": str(run_dir), "db_path": str(db_path)}
 
 
-def _collect_context(db_path: Path) -> dict[str, str]:
+def _collect_context(db_path: Path, context: dict[str, Any] | None = None) -> dict[str, str]:
     conn = db.connect(db_path)
     conn.row_factory = sqlite3.Row
     run = _first_run(conn)
-    context = collect_git_context(run["repo_path"], run["base_ref"], run["head_ref"])
+    if context is None:
+        context = collect_git_context(run["repo_path"], run["base_ref"], run["head_ref"])
     conn.execute(
         "update runs set base_sha = ?, head_sha = ?, updated_at = datetime('now') where id = ?",
         (context["base_sha"], context["head_sha"], run["id"]),
@@ -283,8 +284,9 @@ def _prepare_tasks(db_path: Path) -> dict[str, Any]:
 def command_start(args: argparse.Namespace) -> int:
     repo = Path(args.repo).expanduser().resolve()
     runs_root = Path(args.runs_root).expanduser().resolve() if args.runs_root else None
+    context = collect_git_context(repo, args.base, args.head)
     payload = _init_run(repo, args.base, args.head, args.mode, runs_root)
-    payload.update(_collect_context(Path(payload["db_path"])))
+    payload.update(_collect_context(Path(payload["db_path"]), context))
     payload.update(_prepare_tasks(Path(payload["db_path"])))
     payload["next"] = "own-ultrareview next --db <db_path>"
     _print(payload)

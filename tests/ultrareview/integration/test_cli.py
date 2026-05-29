@@ -67,6 +67,33 @@ def test_cli_start_collects_context_and_prepares_first_task(tmp_path):
     assert (run_dir / "packets" / "scout-diff_cartographer.json").exists()
 
 
+def test_cli_start_invalid_refs_does_not_create_partial_run(tmp_path):
+    repo, _base_sha = make_repo(tmp_path)
+    runs_root = tmp_path / "runs"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ultrareview.cli",
+            "start",
+            "--repo",
+            str(repo),
+            "--base",
+            "does-not-exist",
+            "--runs-root",
+            str(runs_root),
+        ],
+        cwd=Path.cwd(),
+        env=cli_env(),
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode != 0
+    assert not runs_root.exists()
+
+
 def test_cli_next_leases_first_task_after_start(tmp_path):
     repo, base_sha = make_repo(tmp_path)
     start = subprocess.run(
