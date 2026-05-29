@@ -66,6 +66,8 @@ def _normalize_finding(finding: dict[str, object]) -> dict[str, object]:
     severity = str(normalized.get("severity") or normalized.get("final_severity") or "acceptable")
     category = str(normalized.get("category") or "general")
     file_path = str(normalized.get("file") or "unknown")
+    if normalized.get("display_index") is not None:
+        normalized["display_index"] = int(normalized["display_index"])
     normalized["severity"] = severity
     normalized["criticality"] = normalized.get("criticality") or SEVERITY_LABELS.get(severity, severity.replace("_", " ").title())
     normalized["recommended_action"] = normalized.get("recommended_action") or _default_recommended_action(severity)
@@ -97,11 +99,12 @@ def _markdown(run: sqlite3.Row, findings: list[dict[str, object]]) -> str:
         return "\n".join(lines)
 
     for index, finding in enumerate(findings, start=1):
+        display_index = int(finding.get("display_index") or index)
         severity = str(finding["severity"]).upper()
         location = f"{finding['file']}:{finding['line']}"
         lines.extend(
             [
-                f"## {index}. {severity} - {location}",
+                f"## {display_index}. {severity} - {location}",
                 "",
                 f"**Finding ID:** `{finding['id']}`",
                 "",
@@ -125,11 +128,12 @@ def _cell(value: object) -> str:
 def _html(run: sqlite3.Row, findings: list[dict[str, object]]) -> str:
     rows = []
     for index, finding in enumerate(findings, start=1):
+        display_index = int(finding.get("display_index") or index)
         severity = str(finding.get("severity") or "unknown")
         severity_slug = _severity_slug(severity)
         rows.append(
-            "<tr>"
-            f"<td>{index}</td>"
+            f"<tr data-display-index=\"{display_index}\">"
+            f"<td>{display_index}</td>"
             f"<td><code>{_cell(finding.get('id'))}</code></td>"
             f"<td><span class=\"severity-badge severity-{severity_slug}\">{_cell(SEVERITY_LABELS.get(severity, severity))}</span></td>"
             f"<td><span class=\"criticality criticality-{severity_slug}\">{_cell(finding.get('criticality'))}</span></td>"
@@ -146,6 +150,7 @@ def _html(run: sqlite3.Row, findings: list[dict[str, object]]) -> str:
 
     details = []
     for index, finding in enumerate(findings, start=1):
+        display_index = int(finding.get("display_index") or index)
         severity = str(finding.get("severity") or "unknown")
         severity_slug = _severity_slug(severity)
         evidence = finding.get("evidence") or []
@@ -155,8 +160,8 @@ def _html(run: sqlite3.Row, findings: list[dict[str, object]]) -> str:
             if isinstance(item, dict)
         )
         details.append(
-            f"<article class=\"finding-detail\" id=\"finding-{index}\">"
-            f"<h3><span>{index}. {_cell(finding.get('claim'))}</span> <span class=\"severity-badge severity-{severity_slug}\">{_cell(SEVERITY_LABELS.get(severity, severity))}</span></h3>"
+            f"<article class=\"finding-detail\" id=\"finding-{display_index}\" data-display-index=\"{display_index}\">"
+            f"<h3><span>{display_index}. {_cell(finding.get('claim'))}</span> <span class=\"severity-badge severity-{severity_slug}\">{_cell(SEVERITY_LABELS.get(severity, severity))}</span></h3>"
             f"<p><strong>Criticality:</strong> {_cell(finding.get('criticality'))}</p>"
             f"<p><strong>Failure mode:</strong> {_cell(finding.get('failure_mode'))}</p>"
             f"<p><strong>Introduced by diff:</strong> {_cell(finding.get('introduced_by_diff') or 'Not recorded.')}</p>"
@@ -280,9 +285,10 @@ def main() -> int:
         """
     ).fetchall()
     findings = []
-    for row in rows:
+    for display_index, row in enumerate(rows, start=1):
         raw_finding = json.loads(row["report_json"])
         raw_finding.setdefault("category", row["candidate_category"])
+        raw_finding["display_index"] = display_index
         finding = _normalize_finding(raw_finding)
         finding["id"] = row["id"]
         finding["available_actions"] = AVAILABLE_ACTIONS

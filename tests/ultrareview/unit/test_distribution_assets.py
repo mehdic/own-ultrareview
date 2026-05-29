@@ -168,3 +168,14 @@ def test_implementation_plan_gate_treats_fix_requests_as_scope_selection_only():
     for text in (skill, vscode_agent, claude_agent):
         for phrase in required_phrases:
             assert phrase in text
+
+
+def test_agent_prompts_require_stable_display_index_for_fix_number_mapping():
+    skill = Path("skills/ultrareview/SKILL.md").read_text(encoding="utf-8")
+    vscode_agent = Path("skills/ultrareview/references/ultrareview.agent.md").read_text(encoding="utf-8")
+    claude_agent = Path("skills/ultrareview/references/claude-code-agent.md").read_text(encoding="utf-8")
+
+    for text in (skill, vscode_agent, claude_agent):
+        assert "display_index" in text
+        assert "Never renumber, sort, filter, or regroup findings independently after `actions` returns." in text
+        assert "If the user asks to fix `#N`, map it only to the finding" in text

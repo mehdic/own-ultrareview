@@ -76,11 +76,14 @@ def test_report_script_writes_markdown_and_json(tmp_path):
     assert "overflow-x: auto" in html
     assert "word-break: break-word" in html
     assert "max-width: 100%" in html
+    assert 'data-display-index="1"' in html
+    assert 'id="finding-1"' in html
     assert "MUST_CHANGE" in markdown
     assert "app.py:12" in markdown
     assert "Finding ID" in markdown
     assert "Available actions" in markdown
     assert report_json["findings"][0]["id"]
+    assert report_json["findings"][0]["display_index"] == 1
     assert report_json["findings"][0]["available_actions"] == ["fix", "accept_risk", "ignore", "defer", "needs_human"]
     assert report_json["findings"][0]["claim"] == "The invoice tenant is not checked."
     assert report_json["findings"][0]["recommended_action"] == "fix_before_merge"

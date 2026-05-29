@@ -302,6 +302,8 @@ Then show the chat decision table:
 | # | ID | Severity | File | Claim | Recommended action | Suggested fix | Fix group | Risk if not fixed | Risk of fix | Effort |
 |---|----|----------|------|-------|--------------------|---------------|-----------|-------------------|-------------|--------|
 
+The `#` column must be `display_index` from the `actions` JSON. Never renumber, sort, filter, or regroup findings independently after `actions` returns. If the user asks to fix `#N`, map it only to the finding where `display_index == N`, show the mapped finding ID in the implementation plan scope, and never infer the target from the HTML row position or a locally regenerated number.
+
 Recommended action must be one of:
 
 - `fix_before_merge`;

@@ -187,6 +187,7 @@ def test_actions_lists_findings_and_available_decisions(tmp_path):
     assert "overflow-x: auto" in html
     assert "word-break: break-word" in html
     assert payload["findings"][0]["id"] == finding_id
+    assert payload["findings"][0]["display_index"] == 1
     assert payload["findings"][0]["claim"] == "The CLI skips verifier setup."
     assert payload["findings"][0]["introduced_by_diff"] == "The changed next-step routing skipped verifier preparation."
     assert payload["findings"][0]["suggested_fix"] == "Route the next command to prepare-verifiers before judge."
@@ -225,6 +226,7 @@ def test_actions_and_summary_migrate_older_databases_without_decision_tables(tmp
     summary_json = json.loads(Path(summary_payload["json_path"]).read_text(encoding="utf-8"))
 
     assert actions["findings"][0]["id"] == finding_id
+    assert actions["findings"][0]["display_index"] == 1
     assert actions["findings"][0]["decision"] is None
     assert actions["findings"][0]["resolution"] is None
     assert summary_json["findings"][0]["id"] == finding_id

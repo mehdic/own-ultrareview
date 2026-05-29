@@ -376,6 +376,8 @@ Use this decision table format:
 
 Rules for the table:
 
+- The `#` column must be `display_index` from the `actions` JSON. Never renumber, sort, filter, or regroup findings independently after `actions` returns.
+- If the user asks to fix `#N`, map it only to the finding where `display_index == N`, show the mapped finding ID in the implementation plan scope, and never infer the target from the HTML row position or a locally regenerated number.
 - `Recommended action` must be one of: `fix_before_merge`, `accept_risk`, `defer`, `needs_human`, `ignore_duplicate`.
 - `Suggested fix` must be a concrete engineering change, not a restatement of the bug.
 - `Fix group` must identify the shared root-cause group. Use the same group for duplicates or related fixes.

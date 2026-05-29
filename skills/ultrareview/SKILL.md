@@ -180,6 +180,8 @@ The report must be readable by opening the file directly in a browser and must i
 
 Do not show any issues breakdown, findings table, action table, or fix-group summary until `actions` returns `decision_gate_complete: true` and an `html_path`. The first human-visible line of the decision message must be `HTML report: <html_path>`.
 
+The `#` column in chat must use each finding's `display_index` from `actions` and from `final-report.json`. Never renumber, sort, filter, or regroup findings independently after `actions` returns. If the user asks to fix `#N`, map it only to the finding whose `display_index` is `N`, show that finding ID in the implementation plan scope, and never infer the target from the HTML row position or a locally regenerated table number.
+
 After the user chooses decisions, do not implement selected fixes directly. Any user request to fix one issue, multiple issues, a fix group, or all issues means selected scope for an implementation plan only; it is not approval to edit. If any finding or fix group is selected for `fix` / `fix_before_merge`, first create an implementation plan in both Markdown and HTML:
 
 ```text
