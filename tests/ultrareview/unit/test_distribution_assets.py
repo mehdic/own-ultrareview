@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import zipfile
 from pathlib import Path
 
 
@@ -82,6 +84,36 @@ def test_platform_builder_excludes_autoresearch_local_logs():
 
     assert "--exclude results.tsv" in build_script
     assert "--exclude run.log" in build_script
+
+
+def test_platform_builder_zip_payload_excludes_autoresearch_local_logs(tmp_path):
+    local_files = {
+        Path("results.tsv"): "experiment\tcommit\tmetric\tstatus\tdescription\n",
+        Path("run.log"): "local test output\n",
+    }
+    backups = {path: path.read_text(encoding="utf-8") if path.exists() else None for path in local_files}
+    try:
+        for path, content in local_files.items():
+            path.write_text(content, encoding="utf-8")
+
+        subprocess.run(
+            ["scripts/build_platform_packages.sh", "vtest", str(tmp_path)],
+            cwd=Path.cwd(),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        for zip_path in tmp_path.glob("vtest/*.zip"):
+            with zipfile.ZipFile(zip_path) as archive:
+                names = archive.namelist()
+            assert not any(name.endswith("/results.tsv") or name.endswith("/run.log") for name in names)
+    finally:
+        for path, original in backups.items():
+            if original is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_text(original, encoding="utf-8")
 
 
 def test_scout_candidate_schema_is_consistent_across_prompts_and_packets():
