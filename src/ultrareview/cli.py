@@ -186,6 +186,19 @@ def _decision_gate_violations(conn: sqlite3.Connection, run: sqlite3.Row, run_di
     html_path = run_dir / "reports" / "ultrareview-report.html"
     if not html_path.exists():
         violations.append("HTML decision report is missing; run own-ultrareview report before actions")
+    else:
+        report_json_path = run_dir / "final-report.json"
+        try:
+            report_payload = json.loads(report_json_path.read_text(encoding="utf-8"))
+            report_count = len(report_payload.get("findings", []))
+        except (OSError, json.JSONDecodeError, TypeError):
+            violations.append("JSON decision report is missing or invalid; run own-ultrareview report before actions")
+        else:
+            if report_count != finding_count:
+                violations.append(
+                    f"decision report is stale: report has {report_count} finding(s), database has {finding_count}; "
+                    "run own-ultrareview report before actions"
+                )
 
     return violations
 
