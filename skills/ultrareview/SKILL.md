@@ -130,6 +130,14 @@ Run scout and verifier subagents in parallel whenever the host supports parallel
 
 In Copilot/VS Code, this runs as one master conversation plus parallel sub-agent calls when available, or sequential calls when the host cannot parallelize. The database is the communication bus. Each sub-agent gets one packet, returns one JSON file, and the scripts validate and persist the result.
 
+## Configuration Inventory Continuity
+
+Every scout must run a configuration inventory continuity check when the diff changes dependencies, frameworks, bootstrapping, auth/security libraries, or config loading. Compare before/after config-backed behavior across `application*.yml`, `application*.yaml`, `application*.properties`, Helm values, environment templates, secrets templates, and deployment overlays when present.
+
+Flag deleted or silently reduced inventories of configured users, accounts, groups, roles, permissions, feature flags, endpoints, scheduled jobs, queues, credentials, tenants, or environment-specific overrides. Treat removed config namespaces, renamed properties, changed defaults, and fallback behavior introduced by dependency/framework migration as concrete regression evidence when they alter runtime behavior.
+
+Security reviewers must specifically catch Spring Boot/Spring Security migrations where old auth configuration was replaced and configured users, passwords, roles, groups, per-environment account overrides, or authorization mappings were lost. Regression reviewers must specifically catch dependency/framework migration changes where removed config namespaces, deleted accounts or roles, environment-specific drift, or changed defaults alter runtime behavior without an explicit migration.
+
 ## Severity Taxonomy
 
 - `critical`: exploitable security issue, data loss, serious outage, irreversible corruption, or a bug that must block release immediately.

@@ -198,6 +198,10 @@ Every candidate must include `title`, `category`, `severity`, `confidence`, `fil
 
 `confidence` must be an integer from 0 to 100, never a string. `evidence` must be a non-empty array of objects; every evidence object must include repo-relative `path`, positive integer `line`, and exact `quote`.
 
+Configuration inventory continuity is mandatory for every scout when the diff changes dependencies, frameworks, bootstrapping, auth/security libraries, or config loading. Compare before/after config-backed behavior across `application*.yml`, `application*.yaml`, `application*.properties`, Helm values, environment templates, secrets templates, and deployment overlays when present. Flag deleted or silently reduced inventories of configured users, accounts, groups, roles, permissions, feature flags, endpoints, scheduled jobs, queues, credentials, tenants, or environment-specific overrides.
+
+Security reviewers must specifically catch Spring Boot/Spring Security migrations where old auth configuration was replaced and configured users, passwords, roles, groups, per-environment account overrides, or authorization mappings were lost. Regression reviewers must specifically catch dependency/framework migration changes where removed config namespaces, deleted accounts or roles, environment-specific drift, or changed defaults alter runtime behavior without an explicit migration.
+
 Use `{"candidates": []}` only when the scout genuinely found no candidates. Prefer an empty candidate array over weak speculation.
 
 ## Verifier Phase

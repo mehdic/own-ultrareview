@@ -15,6 +15,24 @@ class ScoutRole:
     focus: tuple[str, ...]
 
 
+CONFIGURATION_INVENTORY_CONTINUITY_RULES = (
+    "Run a configuration inventory continuity check whenever the diff changes dependencies, frameworks, bootstrapping, auth/security libraries, or config loading.",
+    "Compare before/after config-backed behavior across application*.yml, application*.yaml, application*.properties, Helm values, environment templates, secrets templates, and deployment overlays when present.",
+    "Flag deleted or silently reduced inventories of configured users, accounts, groups, roles, permissions, feature flags, endpoints, scheduled jobs, queues, credentials, tenants, or environment-specific overrides.",
+    "Treat removed config namespaces, renamed properties, changed defaults, and fallback behavior introduced by dependency/framework migration as concrete regression evidence when they alter runtime behavior.",
+)
+
+
+ROLE_SPECIFIC_CONTINUITY_RULES = {
+    "security_reviewer": (
+        "For Spring Boot/Spring Security migrations, compare old and new auth configuration and flag loss of configured users, passwords, roles, groups, per-environment account overrides, or authorization mappings.",
+    ),
+    "regression_reviewer": (
+        "For dependency/framework migration reviews, verify removed config namespaces, deleted accounts or roles, environment-specific drift, and changed defaults preserve intended behavior or are explicitly migrated.",
+    ),
+}
+
+
 SCOUT_ROLES = (
     ScoutRole(
         "diff_cartographer",
@@ -38,13 +56,34 @@ SCOUT_ROLES = (
     ),
     ScoutRole(
         "security_reviewer",
-        "Find concrete security and privacy bugs introduced or exposed by the diff.",
-        ("auth", "injection", "SSRF", "path traversal", "tenant isolation", "PII logs"),
+        "Find concrete security, privacy, and security-configuration continuity bugs introduced or exposed by the diff.",
+        (
+            "auth",
+            "Spring Boot/Spring Security migrations",
+            "configured users",
+            "roles",
+            "per-environment security config",
+            "injection",
+            "SSRF",
+            "path traversal",
+            "tenant isolation",
+            "PII logs",
+        ),
     ),
     ScoutRole(
         "regression_reviewer",
-        "Check backward compatibility, migrations, rollback paths, and public API behavior.",
-        ("compatibility", "migrations", "public APIs", "rollback"),
+        "Check backward compatibility, dependency/framework migration behavior, configuration continuity, rollback paths, and public API behavior.",
+        (
+            "compatibility",
+            "dependency/framework migration",
+            "configuration inventory continuity",
+            "removed config namespaces",
+            "deleted accounts",
+            "changed defaults",
+            "migrations",
+            "public APIs",
+            "rollback",
+        ),
     ),
     ScoutRole(
         "edge_case_reviewer",
@@ -72,6 +111,19 @@ def _packet_for(
     role: ScoutRole,
     git_context_path: Path,
 ) -> dict[str, Any]:
+    rules = [
+        "Use git-derived evidence only.",
+        "Report only issues introduced or exposed by the diff.",
+        "Prefer no finding over speculative noise.",
+        "Every candidate must include file, line, failure mode, and evidence.",
+        *CONFIGURATION_INVENTORY_CONTINUITY_RULES,
+        *ROLE_SPECIFIC_CONTINUITY_RULES.get(role.name, ()),
+        "Return top-level JSON object with exactly the `candidates` array; do not use `findings`.",
+        "confidence must be an integer from 0 to 100, never a string.",
+        "evidence must be a non-empty array of objects with path, positive integer line, and exact quote.",
+        "introduced_by_diff must explain why the diff introduced or exposed the issue.",
+        "suggested_fix must explain the concrete remediation.",
+    ]
     return {
         "run_id": run_id,
         "phase": "scouting",
@@ -80,17 +132,7 @@ def _packet_for(
         "focus": list(role.focus),
         "inputs": {
             "git_context_path": str(git_context_path),
-            "rules": [
-                "Use git-derived evidence only.",
-                "Report only issues introduced or exposed by the diff.",
-                "Prefer no finding over speculative noise.",
-                "Every candidate must include file, line, failure mode, and evidence.",
-                "Return top-level JSON object with exactly the `candidates` array; do not use `findings`.",
-                "confidence must be an integer from 0 to 100, never a string.",
-                "evidence must be a non-empty array of objects with path, positive integer line, and exact quote.",
-                "introduced_by_diff must explain why the diff introduced or exposed the issue.",
-                "suggested_fix must explain the concrete remediation.",
-            ],
+            "rules": rules,
         },
         "severity_taxonomy": SEVERITY_TAXONOMY,
         "output_contract": {

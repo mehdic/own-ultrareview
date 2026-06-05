@@ -140,6 +140,33 @@ def test_scout_candidate_schema_is_consistent_across_prompts_and_packets():
         assert "why_diff_introduced_or_exposed_it" not in text
 
 
+def test_scout_prompts_require_configuration_inventory_continuity():
+    packet_source = Path("src/ultrareview/runtime/packets.py").read_text(encoding="utf-8")
+    scout_prompt = Path("skills/ultrareview/prompts/scout-system.md").read_text(encoding="utf-8")
+    skill = Path("skills/ultrareview/SKILL.md").read_text(encoding="utf-8")
+    vscode_agent = Path("skills/ultrareview/references/ultrareview.agent.md").read_text(encoding="utf-8")
+    claude_agent = Path("skills/ultrareview/references/claude-code-agent.md").read_text(encoding="utf-8")
+
+    required_phrases = [
+        "configuration inventory continuity",
+        "application*.yml",
+        "helm values",
+        "environment-specific",
+        "spring boot/spring security",
+        "configured users",
+        "roles",
+        "per-environment account overrides",
+        "removed config namespaces",
+        "changed defaults",
+        "dependency/framework migration",
+    ]
+
+    for text in (packet_source, scout_prompt, skill, vscode_agent, claude_agent):
+        normalized = text.lower()
+        for phrase in required_phrases:
+            assert phrase in normalized
+
+
 def test_decision_presentation_requires_html_report_path_first():
     skill = Path("skills/ultrareview/SKILL.md").read_text(encoding="utf-8")
     vscode_agent = Path("skills/ultrareview/references/ultrareview.agent.md").read_text(encoding="utf-8")
