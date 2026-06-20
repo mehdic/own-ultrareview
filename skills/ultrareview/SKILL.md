@@ -130,6 +130,21 @@ Run scout and verifier subagents in parallel whenever the host supports parallel
 
 In Copilot/VS Code, this runs as one master conversation plus parallel sub-agent calls when available, or sequential calls when the host cannot parallelize. The database is the communication bus. Each sub-agent gets one packet, returns one JSON file, and the scripts validate and persist the result.
 
+## Real-Agent Authenticity Rule
+
+UltraReview reports for Mehdi must be based on real scout, verifier, and judge work. Do not fabricate, hand-write, or locally simulate scout/verifier JSON and present it as an UltraReview result.
+
+Allowed deterministic or simulated JSON is limited to explicit development tests, fixtures, dry-runs, or when the user has clearly approved a simulated review. In those cases every human-facing update, report, and summary must say `SIMULATED` before any findings.
+
+For normal user-requested reviews, if real subagents cannot be spawned, cannot read the repo, time out, or fail to return valid JSON, mark the review `[blocked]`, preserve the run artifacts, and tell the user what failed. Do not fill the database with invented JSON to make the report look complete.
+
+Before emitting the final report or decision table, verify and state:
+
+- number of real scout agents completed,
+- number of real verifier agents completed,
+- whether any output was simulated,
+- path to each recorded output file.
+
 ## Configuration Inventory Continuity
 
 Every scout must run a configuration inventory continuity check when the diff changes dependencies, frameworks, bootstrapping, auth/security libraries, or config loading. Compare before/after config-backed behavior across `application*.yml`, `application*.yaml`, `application*.properties`, Helm values, environment templates, secrets templates, and deployment overlays when present.
